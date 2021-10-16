@@ -4,21 +4,51 @@
 // username of iLab:
 // iLab Server:
 
-
 #include "mypthread.h"
+
+
 
 // INITAILIZE ALL YOUR VARIABLES HERE
 // YOUR CODE HERE
+int ignore_int = 0;
+int num_thread = 0;
+int num_mutex = 0;
+int yielded=0;
+ucontext_t schedulerContext;
+ucontext_t parentContext;
+queue* thread_queue = NULL;
+queue_node* thread_queue_node = NULL;
+mutex_node* mutex = NULL;
+//my_pthread_mutex_t queue_lock;
 
 
 /* create a new thread */
-int mypthread_create(mypthread_t * thread, pthread_attr_t * attr,
-                      void *(*function)(void*), void * arg) {
+int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*function)(void*), void * arg) {
+
+		ignore_int  = 1;
        // create Thread Control Block
+	   *thread = ++num_thread;
+
        // create and initialize the context of this thread
+
+		tcb* new_tcb = (tcb*) malloc(sizeof(tcb));
+		new_tcb->Priority = 0;
+		new_tcb->TimeRan = 0;
+		new_tcb->Id = *thread;
+		new_tcb->Status = READY;
+		//new_tcb->blocked_by = NULL;
+
+
        // allocate space of stack for this thread to run
+
+		getcontext(&(new_tcb->RetContext));
+
+
        // after everything is all set, push this thread int
        // YOUR CODE HERE
+
+
+	   ignore_int = 0;
 
     return 0;
 };

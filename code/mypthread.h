@@ -5,6 +5,7 @@
 // iLab Server:
 
 
+
 #ifndef MYTHREAD_T_H
 #define MYTHREAD_T_H
 
@@ -13,23 +14,58 @@
 /* To use Linux pthread Library in Benchmark, you have to comment the USE_MYTHREAD macro */
 #define USE_MYTHREAD 1
 
+#define LOWEST_PRIORITY 3
+#define STACK_SIZE 1048576//A megabyte
+#define TIME_QUANTUM 15//milliseconds
+#ifdef MLFQ
+	#define SCHED MLFQ_SCHEDULER
+#elif FIFO
+  #define SCHED FIFO_SCHEDULER
+#else
+  #define SCHED PSJF_SCHEDULER
+#endif
+
 /* include lib header files that you need here: */
 #include <unistd.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>//added
+#include <sys/time.h>
+#include <ucontext.h>
+#include <malloc.h>
+
+
 
 typedef uint mypthread_t;
 
+ typedef enum _status{
+   READY,RUNNING,BLOCKED
+ }status;
+
+ typedef enum _scheduler{
+   MLFQ_SCHEDULER, FIFO_SCHEDULER, PSJF_SCHEDULER
+ }scheduler;
+
 typedef struct threadControlBlock {
 	/* add important states in a thread control block */
+	struct mypthread_mutex_t blocked_by;
 	// thread Id
+	mypthread_t* Id;
+
 	// thread status
+	status Status;
+
 	// thread context
+	ucontext_t Context;
+	ucontext_t RetContext;
+
 	// thread stack
 	// thread priority
+	int Priority;
 	// And more ...
+	unsigned long int TimeRan;
 
 	// YOUR CODE HERE
 } tcb;
@@ -37,7 +73,8 @@ typedef struct threadControlBlock {
 /* mutex struct definition */
 typedef struct mypthread_mutex_t {
 	/* add something here */
-
+	int mId;
+	int isLocked;
 	// YOUR CODE HERE
 } mypthread_mutex_t;
 
@@ -46,12 +83,26 @@ typedef struct mypthread_mutex_t {
 
 // YOUR CODE HERE
 
+typedef struct my_mutex_node{
+	struct my_mutex_node* next;
+	mypthread_mutex_t* mutex;
+} mutex_node;
+
+typedef struct my_queue_node{
+	tcb* t_tcb;
+	struct my_queue_node* next;
+} queue_node;
+
+typedef struct my_queue{
+	struct queue_node* first;
+	struct queue_node* last;
+} queue;
+
 
 /* Function Declarations: */
 
 /* create a new thread */
-int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void
-    *(*function)(void*), void * arg);
+int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*function)(void*), void * arg);
 
 /* give CPU pocession to other user level threads voluntarily */
 int mypthread_yield();
@@ -63,8 +114,7 @@ void mypthread_exit(void *value_ptr);
 int mypthread_join(mypthread_t thread, void **value_ptr);
 
 /* initial the mutex lock */
-int mypthread_mutex_init(mypthread_mutex_t *mutex, const pthread_mutexattr_t
-    *mutexattr);
+int mypthread_mutex_init(mypthread_mutex_t *mutex, const pthread_mutexattr_t *mutexattr);
 
 /* aquire the mutex lock */
 int mypthread_mutex_lock(mypthread_mutex_t *mutex);

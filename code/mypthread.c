@@ -339,6 +339,12 @@ int mypthread_mutex_destroy(mypthread_mutex_t *mutex) {
 		return -1;
 	}
 
+	if(mutextodestroy->mutex->isLocked == 1){
+		mutextodestroy->mutex->isLocked = 0;
+		mutextodestroy->mutex->node_has_lock = NULL;
+		mutextodestroy->mutex->node_blocked_list = NULL;
+	}
+
 	mutex_node* prevmutex = find_prev_mutex(mutex->mId);
 	if(mutextodestroy->next != NULL){
 		if(prevmutex != NULL){

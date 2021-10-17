@@ -50,7 +50,7 @@ typedef uint mypthread_t;
 
 typedef struct threadControlBlock {
 	/* add important states in a thread control block */
-	struct mypthread_mutex_t blocked_by;
+	struct mypthread_mutex_t* blocked_by;
 	// thread Id
 	mypthread_t* Id;
 
@@ -98,6 +98,16 @@ typedef struct my_queue{
 	struct queue_node* first;
 	struct queue_node* last;
 } queue;
+
+typedef struct my_multi_queue{
+	queue* queue0;
+	queue* queue1;
+	queue* queue2;
+	queue* queue3;
+} multi_queue;
+
+
+void* retval[1000000];
 
 
 /* Function Declarations: */

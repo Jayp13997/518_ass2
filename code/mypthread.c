@@ -19,7 +19,7 @@ ucontext_t parentContext;
 queue* threadqueue = NULL;
 multi_queue* multiqueue = NULL;
 queue_node* runningnode = NULL;
-mutex_node* mutex = NULL;
+mutex_node* mutexlist = NULL;
 mypthread_mutex_t queuelock;
 
 
@@ -108,8 +108,7 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 		//put thread in a queue
 
 
-		if(threadqueue == NULL){
-			//initialize queue/multi queue depending on the scheduler
+		if(threadqueue == NULL){ //initialize queue/multi queue depending on the scheduler
 
 			if(SCHED == FIFO_SCHEDULER){
 				threadqueue = (queue*) malloc(sizeof(queue));
@@ -136,7 +135,6 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 				multiqueue->queue2->last = NULL;
 				multiqueue->queue3->first = NULL;
 				multiqueue->queue3->last = NULL;
-
 			}
 
 			mypthread_mutex_init(&queuelock, NULL);
@@ -178,10 +176,7 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 					last_node->next = qnode;
 					multiqueue->queue0->last = qnode;
 				}
-
 			}
-
-
 		}
 
 		ignore_int = 0;
@@ -225,6 +220,16 @@ int mypthread_mutex_init(mypthread_mutex_t *mutex,
 	//initialize data structures for this mutex
 
 	// YOUR CODE HERE
+
+	mutex_node* mutexnode = (mutex_node*) malloc(sizeof(mutex_node));
+	mypthread_mutex_t* newmutex = (mypthread_mutex_t*) malloc(sizeof(mypthread_mutex_t));
+	mutexnode->mutex = newmutex;
+	mutexnode->mutex->isLocked = 0;
+	mutexnode->mutex->mId = ++num_mutex;
+	mutexnode->next = mutexlist;
+	mutexlist = mutexnode;
+	*mutex = *newmutex;
+
 	return 0;
 };
 

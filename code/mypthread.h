@@ -48,48 +48,6 @@ typedef uint mypthread_t;
    MLFQ_SCHEDULER, FIFO_SCHEDULER, PSJF_SCHEDULER
  }scheduler;
 
-typedef struct threadControlBlock {
-	/* add important states in a thread control block */
-	struct mypthread_mutex_t* blocked_by;
-	// thread Id
-	mypthread_t* Id;
-
-	// thread status
-	status Status;
-
-	// thread context
-	ucontext_t Context;
-	ucontext_t RetContext;
-
-	// thread stack
-	// thread priority
-	int Priority;
-	// And more ...
-	unsigned long int TimeRan;
-	void * return_value;
-
-	// YOUR CODE HERE
-} tcb;
-
-/* mutex struct definition */
-typedef struct mypthread_mutex_t {
-	/* add something here */
-	int mId;
-	int isLocked;
-	mypthread_t holder;
-	mutex_wait_list_node waiting_list; 
-	// YOUR CODE HERE
-} mypthread_mutex_t;
-
-/* define your data structures here: */
-// Feel free to add your own auxiliary data structures (linked list or queue etc...)
-
-// YOUR CODE HERE
-
-typedef struct my_mutex_wait_list_node{
-	mypthread_t * id;
-	struct my_mutex_wait_list_node * next;
-} mutex_wait_list_node;
 
 typedef struct my_mutex_node{
 	struct my_mutex_node* next;
@@ -116,6 +74,72 @@ typedef struct my_multi_queue{
 
 void* retval[1000000];
 
+
+typedef struct threadControlBlock {
+	/* add important states in a thread control block */
+	struct mypthread_mutex_t* blocked_by;
+	struct queue_node* next_blocked;
+	// thread Id
+	mypthread_t* Id;
+
+	// thread status
+	status Status;
+
+	// thread context
+	ucontext_t Context;
+	//ucontext_t RetContext;
+
+	// thread stack
+	// thread priority
+	int Priority;
+	// And more ...
+	unsigned long int TimeRan;
+	void * return_value;
+
+	// YOUR CODE HERE
+} tcb;
+
+/* mutex struct definition */
+typedef struct mypthread_mutex_t {
+	/* add something here */
+	int mId;
+	int isLocked;
+	queue_node* node_has_lock;
+	queue_node* node_blocked_list;
+
+	// YOUR CODE HERE
+} mypthread_mutex_t;
+
+/* define your data structures here: */
+// Feel free to add your own auxiliary data structures (linked list or queue etc...)
+
+// YOUR CODE HERE
+/*
+typedef struct my_mutex_node{
+	struct my_mutex_node* next;
+	mypthread_mutex_t* mutex;
+} mutex_node;
+
+typedef struct my_queue_node{
+	tcb* t_tcb;
+	struct my_queue_node* next;
+} queue_node;
+
+typedef struct my_queue{
+	struct queue_node* first;
+	struct queue_node* last;
+} queue;
+
+typedef struct my_multi_queue{
+	queue* queue0;
+	queue* queue1;
+	queue* queue2;
+	queue* queue3;
+} multi_queue;
+
+
+void* retval[1000000];
+*/
 
 /* Function Declarations: */
 

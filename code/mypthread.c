@@ -31,12 +31,13 @@ void free_queue_node(queue_node* runningnode);
 
 /* Extra function declarations end */
 
-
+/*
 void threadWrapper(void* arg, void*(*function)(void*), int tID){
 	void* threadretval = (*function)(arg);
 	retval[tID] = threadretval;
 	
 }
+*/
 
 /* create a new thread */
 int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*function)(void*), void * arg) {
@@ -45,6 +46,7 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
        // create Thread Control Block
 	   *thread = ++num_thread;
 
+		//create schedular context on an uninitialized queue
 		if(threadqueue == NULL){
 			getcontext(&schedulerContext);
 			schedulerContext.uc_link = 0;
@@ -69,11 +71,12 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 		new_tcb->Id = *thread;
 		new_tcb->Status = READY;
 		new_tcb->blocked_by = NULL;
+		new_tcb->next_blocked = NULL;
 
 
-       // create and initialize the context of this thread
-       // allocate space of stack for this thread to run
-
+    	// create and initialize the context of this thread
+    	// allocate space of stack for this thread to run
+		/*
 		getcontext(&(new_tcb->RetContext));
 		new_tcb->RetContext.uc_link = &schedulerContext;
 		new_tcb->RetContext.uc_stack.ss_sp = malloc(STACK_SIZE);
@@ -89,14 +92,14 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 		makecontext(&new_tcb->RetContext, (void*)&processFinishedJob, 1, new_tcb->Id);
 
 		printf("new thread has been created: %d\n", *thread);
-
+		*/
 		// after everything is all set, push this thread int
 		// YOUR CODE HERE
 
 		ucontext_t newThreadContext;
 		getcontext(&newThreadContext);
 
-		newThreadContext.uc_link = &(new_tcb->RetContext);
+		newThreadContext.uc_link = &schedulerContext;
 		newThreadContext.uc_stack.ss_sp = malloc(STACK_SIZE);
 
 		if(newThreadContext.uc_stack.ss_sp == 0){
@@ -107,7 +110,9 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 		newThreadContext.uc_stack.ss_size = STACK_SIZE;
 		newThreadContext.uc_stack.ss_flags = 0;
 
-		makecontext(&newThreadContext, (void*)threadWrapper, 3, arg, function, (int)&new_tcb->Id);
+		//makecontext(&newThreadContext, (void*)threadWrapper, 3, arg, function, (int)&new_tcb->Id);
+		makecontext(&newThreadContext, (void*)function, 1, arg);
+		new_tcb->Context = newThreadContext;
 
 		queue_node* qnode = (queue_node*) malloc(sizeof(queue_node));
 		qnode->t_tcb = new_tcb;
@@ -204,7 +209,7 @@ int mypthread_yield() {
 	// YOUR CODE HERE
 	yielded++;
 	runningnode->t_tcb->Status = READY;
-	swapcontext(&(runningnode->t_tcb->RetContext), &schedulerContext); // save to return context and switch to scheduler context
+	swapcontext(&(runningnode->t_tcb->Context), &schedulerContext); // save to return context and switch to scheduler context
 	return 0;
 };
 
@@ -261,22 +266,64 @@ int mypthread_mutex_init(mypthread_mutex_t *mutex,
 
 /* aquire the mutex lock */
 int mypthread_mutex_lock(mypthread_mutex_t *mutex) {
-        // use the built-in test-and-set atomic function to test the mutex
-        // if the mutex is acquired successfully, enter the critical section
-        // if acquiring mutex fails, push current thread into block list and //
-        // context switch to the scheduler thread
 
-        // YOUR CODE HERE
-        return 0;
+	ignore_int = 1;
+	mutex_node* mutextolock = find_mutex(mutex->mId);
+
+	if(mutextolock == NULL){
+		ignore_int = 0;
+		return -1;
+	}
+
+    // use the built-in test-and-set atomic function to test the mutex
+
+	if(__sync_lock_test_and_set(&(mutextolock->mutex->isLocked), 1) == 0){
+    // if the mutex is acquired successfully, enter the critical section
+		mutextolock->mutex->node_has_lock = runningnode;
+		mutextolock->mutex->node_blocked_list = NULL;
+		ignore_int = 0;
+		return 0;
+	}
+    // if acquiring mutex fails, push current thread into block list and //
+    // context switch to the scheduler thread
+
+	if(mutextolock->mutex->node_blocked_list == NULL){
+		mutextolock->mutex->node_blocked_list = runningnode;
+	}
+	else{
+		mutextolock->mutex->node_blocked_list->t_tcb->next_blocked = runningnode;
+	}
+	runningnode->t_tcb->Status = BLOCKED;
+	setcontext(&schedulerContext);
+
+	//mypthread_yield();
+
+    // YOUR CODE HERE
+	ignore_int = 0;
+    return 0;
 };
 
 /* release the mutex lock */
 int mypthread_mutex_unlock(mypthread_mutex_t *mutex) {
+
+	ignore_int = 1;
+	mutex_node* mutextounlock = find_mutex(mutex->mId);
+
+	if(mutextounlock == NULL){
+		ignore_int = 0;
+		return -1;
+	}
+
 	// Release mutex and make it available again.
+	mutextounlock->mutex->isLocked = 0;
+	mutextounlock->mutex->node_has_lock = NULL;
+
 	// Put threads in block list to run queue
 	// so that they could compete for mutex later.
 
+
 	// YOUR CODE HERE
+	ignore_int = 0;
 	return 0;
 };
 
@@ -284,6 +331,30 @@ int mypthread_mutex_unlock(mypthread_mutex_t *mutex) {
 /* destroy the mutex */
 int mypthread_mutex_destroy(mypthread_mutex_t *mutex) {
 	// Deallocate dynamic memory created in mypthread_mutex_init
+	ignore_int = 1;
+	mutex_node* mutextodestroy = find_mutex(mutex->mId);
+
+	if(mutextodestroy == NULL){
+		ignore_int = 0;
+		return -1;
+	}
+
+	mutex_node* prevmutex = find_prev_mutex(mutex->mId);
+	if(mutextodestroy->next != NULL){
+		if(prevmutex != NULL){
+			prevmutex->next = mutextodestroy->next;
+		}
+	}
+	else{
+		if(prevmutex != NULL){
+			prevmutex->next = NULL;
+		}
+	}
+
+	free(mutextodestroy->next);
+	free_queue_node(mutextodestroy->mutex->node_has_lock);
+	free_queue_node(mutextodestroy->mutex->node_blocked_list);
+	free(mutextodestroy);
 
 	return 0;
 };
@@ -334,8 +405,11 @@ static void sched_mlfq() {
 // YOUR CODE HERE
 
 void free_queue_node(queue_node* runningnode){
+	if(runningnode == NULL){
+		return;;
+	}
 	free(runningnode->t_tcb->Context.uc_stack.ss_sp); // deallocate all memory for queue node
-	free(runningnode->t_tcb->RetContext.uc_stack.ss_sp);
+	//free(runningnode->t_tcb->RetContext.uc_stack.ss_sp);
 	free(runningnode->t_tcb);
 	free(runningnode);		
 }
@@ -354,6 +428,41 @@ queue_node* dequeue(queue* queue){
 
 void processFinishedJob(int tID){
 
+}
+
+mutex_node* find_mutex(int mutexid){
+	ignore_int = 1;
+
+	mutex_node* mptr = mutexlist;
+	while(mptr != NULL){
+		if(mptr->mutex->mId == mutexid){
+			ignore_int = 0;
+			return mptr;
+		}
+		else{
+			mptr = mptr->next;
+		}
+	}
+	ignore_int = 0;
+	return NULL;
+}
+
+mutex_node* find_prev_mutex(int mutexid){
+	ignore_int = 1;
+
+	mutex_node* mptr = mutexlist;
+	while(mptr->next != NULL){
+		if(mptr->next->mutex->mId == mutexid){
+			ignore_int = 0;
+			return mptr;
+		}
+		else{
+			mptr = mptr->next;
+		}
+	
+	}
+	ignore_int = 0;
+	return NULL;
 }
 
 

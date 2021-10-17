@@ -20,6 +20,7 @@ queue* thread_queue = NULL;
 queue_node* thread_queue_node = NULL;
 mutex_node* mutex = NULL;
 //my_pthread_mutex_t queue_lock;
+tcb* current;
 
 
 /* create a new thread */
@@ -61,6 +62,11 @@ int mypthread_yield() {
 	// wwitch from thread context to scheduler context
 
 	// YOUR CODE HERE
+	// Something like this?
+	yielded++;
+	current->Status = READY;
+	current->RetContext = current->Context;
+	swapcontext(&(current->Context), &schedulerContext);
 	return 0;
 };
 
@@ -69,6 +75,11 @@ void mypthread_exit(void *value_ptr) {
 	// Deallocated any dynamic memory created when starting this thread
 
 	// YOUR CODE HERE
+	current->Status = EXIT;
+	num_thread --;
+	free(current->);
+	free();
+	swapcontext(current->Context, schedulerContext);
 };
 
 
@@ -79,6 +90,11 @@ int mypthread_join(mypthread_t thread, void **value_ptr) {
 	// de-allocate any dynamic memory created by the joining thread
 
 	// YOUR CODE HERE
+	while(thread != EXIT){ // I need the tcb?
+		mypthread_yield();
+	}
+	value_ptr = ;
+	free();
 	return 0;
 };
 
@@ -164,3 +180,7 @@ static void sched_mlfq() {
 // Feel free to add any other functions you need
 
 // YOUR CODE HERE
+
+tcb find_tcb(){
+
+}

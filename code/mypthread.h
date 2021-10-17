@@ -41,7 +41,7 @@
 typedef uint mypthread_t;
 
  typedef enum _status{
-   READY,RUNNING,BLOCKED
+   READY,RUNNING,BLOCKED,EXIT,WAIT
  }status;
 
  typedef enum _scheduler{
@@ -59,13 +59,14 @@ typedef struct threadControlBlock {
 
 	// thread context
 	ucontext_t Context;
-	ucontext_t RetContext;
+	ucontext_t RetContext; // don't think we need it
 
 	// thread stack
 	// thread priority
 	int Priority;
 	// And more ...
 	unsigned long int TimeRan;
+	void * return_value;
 
 	// YOUR CODE HERE
 } tcb;

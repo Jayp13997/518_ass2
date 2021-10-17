@@ -76,6 +76,8 @@ typedef struct mypthread_mutex_t {
 	/* add something here */
 	int mId;
 	int isLocked;
+	mypthread_t holder;
+	mutex_wait_list_node waiting_list; 
 	// YOUR CODE HERE
 } mypthread_mutex_t;
 
@@ -83,6 +85,11 @@ typedef struct mypthread_mutex_t {
 // Feel free to add your own auxiliary data structures (linked list or queue etc...)
 
 // YOUR CODE HERE
+
+typedef struct my_mutex_wait_list_node{
+	mypthread_t * id;
+	struct my_mutex_wait_list_node * next;
+} mutex_wait_list_node;
 
 typedef struct my_mutex_node{
 	struct my_mutex_node* next;

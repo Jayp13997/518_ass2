@@ -289,7 +289,7 @@ int mypthread_mutex_destroy(mypthread_mutex_t *mutex) {
 };
 
 /* scheduler */
-static void schedule() {
+static void schedule() { 
 	// Every time when timer interrup happens, your thread library
 	// should be contexted switched from thread context to this
 	// schedule function
@@ -303,7 +303,9 @@ static void schedule() {
 	// 		sched_mlfq();
 
 	// YOUR CODE HERE
-
+	/*
+	Ideas: Schedule() is called whenever a thread finishes, yields, is blocked, or interrupted
+	*/
 // schedule policy
 #ifndef MLFQ
 	// Choose STCF
@@ -332,6 +334,9 @@ static void sched_mlfq() {
 // Feel free to add any other functions you need
 
 // YOUR CODE HERE
+static void sched_fifo() {
+	
+}
 
 void free_queue_node(queue_node* runningnode){
 	free(runningnode->t_tcb->Context.uc_stack.ss_sp); // deallocate all memory for queue node
@@ -341,7 +346,16 @@ void free_queue_node(queue_node* runningnode){
 }
 
 queue_node* find_node(mypthread_t thread){ // look through queue to find the queue node corresponding to a thread
-
+	queue_node* ptr = threadqueue->first;
+	while(ptr != NULL){
+		if(ptr->t_tcb->Id == thread){
+			return ptr; // returns node containing tcb with corresponding thread id
+		}
+		else{
+			ptr = ptr->next;
+		}
+	}
+	return NULL; // not found
 }
 
 void enqueue(queue* queue, queue_node* queue_node){

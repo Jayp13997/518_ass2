@@ -16,11 +16,18 @@ int num_mutex = 0;
 int yielded=0;
 ucontext_t schedulerContext;
 ucontext_t parentContext;
-queue* thread_queue = NULL;
-queue_node* thread_queue_node = NULL;
+queue* threadqueue = NULL;
+multi_queue* multiqueue = NULL;
+queue_node* runningnode = NULL;
 mutex_node* mutex = NULL;
-//my_pthread_mutex_t queue_lock;
+mypthread_mutex_t queuelock;
 
+
+void threadWrapper(void* arg, void*(*function)(void*), int tID){
+	void* threadretval = (*function)(arg);
+	retval[tID] = threadretval;
+	
+}
 
 /* create a new thread */
 int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*function)(void*), void * arg) {
@@ -29,26 +36,156 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
        // create Thread Control Block
 	   *thread = ++num_thread;
 
-       // create and initialize the context of this thread
+		if(threadqueue == NULL){
+			getcontext(&schedulerContext);
+			schedulerContext.uc_link = 0;
+			schedulerContext.uc_stack.ss_sp = malloc(STACK_SIZE);
+			schedulerContext.uc_stack.ss_size = STACK_SIZE;
+
+			if(schedulerContext.uc_stack.ss_sp == 0){
+				printf("Couldn't allocate space for schedular context\n");
+				exte(1);
+			}
+
+			schedulerContext.uc_stack.ss_flags = 0;
+			makecontext(&schedulerContext, (void*)&schedule, 0);
+
+		}
+
+
 
 		tcb* new_tcb = (tcb*) malloc(sizeof(tcb));
 		new_tcb->Priority = 0;
 		new_tcb->TimeRan = 0;
 		new_tcb->Id = *thread;
 		new_tcb->Status = READY;
-		//new_tcb->blocked_by = NULL;
+		new_tcb->blocked_by = NULL;
 
 
+       // create and initialize the context of this thread
        // allocate space of stack for this thread to run
 
 		getcontext(&(new_tcb->RetContext));
+		new_tcb->RetContext.uc_link = &schedulerContext;
+		new_tcb->RetContext.uc_stack.ss_sp = malloc(STACK_SIZE);
+
+		if(new_tcb->RetContext.uc_stack.ss_size == 0){
+			printf("Couldn't allocate space for return context\n");
+			exit(1);
+		}
+
+		new_tcb->RetContext.uc_stack.ss_size = STACK_SIZE;
+		new_tcb->RetContext.uc_stack.ss_flags = 0;
+
+		makecontext(&new_tcb->RetContext, (void*)&processFinishedJob, 1, new_tcb->Id);
+
+		printf("new thread has been created: %d\n", *thread);
+
+		// after everything is all set, push this thread int
+		// YOUR CODE HERE
+
+		ucontext_t newThreadContext;
+		getcontext(&newThreadContext);
+
+		newThreadContext.uc_link = &(new_tcb->RetContext);
+		newThreadContext.uc_stack.ss_sp = malloc(STACK_SIZE);
+
+		if(newThreadContext.uc_stack.ss_sp == 0){
+		   printf("Couldn't allocate space for context\n");
+		   exit(0);
+		}
+
+		newThreadContext.uc_stack.ss_size = STACK_SIZE;
+		newThreadContext.uc_stack.ss_flags = 0;
+
+		makecontext(&newThreadContext, (void*)threadWrapper, 3, arg, function, (int)&new_tcb->Id);
+
+		queue_node* qnode = (queue_node*) malloc(sizeof(queue_node));
+		qnode->t_tcb = new_tcb;
+		qnode->next = NULL;
 
 
-       // after everything is all set, push this thread int
-       // YOUR CODE HERE
+		//put thread in a queue
 
 
-	   ignore_int = 0;
+		if(threadqueue == NULL){
+			//initialize queue/multi queue depending on the scheduler
+
+			if(SCHED == FIFO_SCHEDULER){
+				threadqueue = (queue*) malloc(sizeof(queue));
+				threadqueue->first = qnode;
+				threadqueue->last = qnode;
+			}
+			else if(SCHED == PSJF_SCHEDULER){
+				threadqueue = (queue*) malloc(sizeof(queue));
+				threadqueue->first = qnode;
+				threadqueue->last = qnode;
+			}
+			else{ //MLFQ
+				multiqueue = (multi_queue*) malloc(sizeof(multi_queue));
+				multiqueue->queue0 = (queue*) malloc(sizeof(queue));
+				multiqueue->queue1 = (queue*) malloc(sizeof(queue));
+				multiqueue->queue2 = (queue*) malloc(sizeof(queue));
+				multiqueue->queue3 = (queue*) malloc(sizeof(queue));
+
+				multiqueue->queue0->first = qnode;
+				multiqueue->queue0->last = qnode;
+				multiqueue->queue1->first = NULL;
+				multiqueue->queue1->last = NULL;
+				multiqueue->queue2->first = NULL;
+				multiqueue->queue2->last = NULL;
+				multiqueue->queue3->first = NULL;
+				multiqueue->queue3->last = NULL;
+
+			}
+
+			mypthread_mutex_init(&queuelock, NULL);
+			getcontext(&parentContext);
+
+		}
+		else{ //thread is already initialized
+
+			if(SCHED == FIFO_SCHEDULER){
+				if(threadqueue->first == NULL){ //if thread is null
+					threadqueue->first = qnode;
+					threadqueue->last = qnode;
+				}
+				else{
+					queue_node* last_qnode = threadqueue->last;
+					last_qnode->next = qnode;
+					threadqueue->last = qnode;
+				}
+			}
+			else if(SCHED == PSJF_SCHEDULER){
+				if(threadqueue->first == NULL){
+					threadqueue->first = qnode;
+					threadqueue->last = qnode;
+				}
+				else{
+					queue_node* last_node = threadqueue->last;
+					last_node->next = qnode;
+					threadqueue->last = qnode;
+				}
+			}
+			else{ //MLFQ
+
+				if(multiqueue->queue0->first == NULL){
+					multiqueue->queue0->first = qnode;
+					multiqueue->queue0->last = qnode;
+				}
+				else{
+					queue_node* last_node = multiqueue->queue0->last;
+					last_node->next = qnode;
+					multiqueue->queue0->last = qnode;
+				}
+
+			}
+
+
+		}
+
+		ignore_int = 0;
+		return 0;
 
     return 0;
 };
@@ -164,3 +301,12 @@ static void sched_mlfq() {
 // Feel free to add any other functions you need
 
 // YOUR CODE HERE
+
+
+
+void processFinishedJob(int tID){
+
+}
+
+
+

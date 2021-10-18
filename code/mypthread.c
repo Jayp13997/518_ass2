@@ -223,6 +223,7 @@ void mypthread_exit(void *value_ptr) {
 		value_ptr = runningnode->t_tcb->return_value; // if value_ptr not NULL, save return value from thread
 	}
 	free_queue_node(runningnode); // deallocate memory
+	runningnode = NULL;
 	setcontext(&schedulerContext); // go to scheduler
 };
 
@@ -241,7 +242,6 @@ int mypthread_join(mypthread_t thread, void **value_ptr) {
 	if(value_ptr != NULL){ 
 		value_ptr = node->t_tcb->return_value; // if value_ptr not NULL, save return value from thread
 	}
-	free_queue_node(node);
 	return 0;
 };
 
@@ -406,17 +406,22 @@ static void sched_mlfq() {
 
 // YOUR CODE HERE
 static void sched_fifo() {
+	//Thread Finished, runningnode is NULL
 	
+	//Thread Yielded, runningnode is YIELD
+
+	//Thread Blocked, runningnode is BLOCKED
+
+	//Thread Interrupted (timer), runningnode is RUNNING
 }
 
-void free_queue_node(queue_node* runningnode){
-	if(runningnode == NULL){
+void free_queue_node(queue_node* finishednode){
+	if(finishednode == NULL){
 		return;;
 	}
-	free(runningnode->t_tcb->Context.uc_stack.ss_sp); // deallocate all memory for queue node
-	//free(runningnode->t_tcb->RetContext.uc_stack.ss_sp);
-	free(runningnode->t_tcb);
-	free(runningnode);		
+	free(finishednode->t_tcb->Context.uc_stack.ss_sp); // deallocate all memory for queue node
+	free(finishednode->t_tcb);
+	free(finishednode);		
 }
 
 queue_node* find_node(mypthread_t thread){ // look through queue to find the queue node corresponding to a thread
@@ -433,11 +438,44 @@ queue_node* find_node(mypthread_t thread){ // look through queue to find the que
 }
 
 void enqueue(queue* queue, queue_node* queue_node){
-
+	if (isEmpty(queue)) {
+		queue->first = queue_node;
+		queue->last = queue_node;
+	}
+	else {
+		queue_node->next = queue->last;
+		queue->last = queue_node;
+	}	
 }
 
 queue_node* dequeue(queue* queue){
+	if (isEmpty(queue)) { // empty
+		return NULL;
+	}
+	else if (queue->first == queue->last){ // one item
+		queue_node * dequeued = queue->first;
+		queue->first = NULL;
+		queue->last == NULL;
+		return dequeued;
+	}
+	else { // multiple items
+		queue_node * ptr = queue->last;
+		while(ptr->next != queue->first){ // get second in line node
+			ptr = ptr->next;
+		}
+		queue_node * dequeued = queue->first;
+		queue->first = ptr;
+		return dequeued;
+	}
+}
 
+int isEmpty(queue* queue){
+	if(queue->first == NULL && queue->last == NULL){
+		return 1;
+	}
+	else {
+		return 0;
+	}
 }
 
 void processFinishedJob(int tID){

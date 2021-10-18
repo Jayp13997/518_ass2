@@ -218,7 +218,6 @@ void mypthread_exit(void *value_ptr) {
 	// Deallocated any dynamic memory created when starting this thread
 
 	// YOUR CODE HERE
-	runningnode->t_tcb->Status = EXIT;
 	if(value_ptr != NULL){
 		value_ptr = runningnode->t_tcb->return_value; // if value_ptr not NULL, save return value from thread
 	}
@@ -236,7 +235,7 @@ int mypthread_join(mypthread_t thread, void **value_ptr) {
 
 	// YOUR CODE HERE
 	queue_node* node = find_node(thread); // find blocking node
-	while(node->t_tcb->Status != EXIT){ // need the tcb status
+	while(node != NULL){ // while the thread is not terminated
 		mypthread_yield(); // do not run until it is done
 	}
 	if(value_ptr != NULL){ 
@@ -382,6 +381,9 @@ static void schedule() {
 	// YOUR CODE HERE
 	/*
 	Ideas: Schedule() is called whenever a thread finishes, yields, is blocked, or interrupted
+	Need to implement a timer interrupt
+	Scheduler should also book keep the time something ran so it can put into tcb block
+	Use int setitmer() and int sigaction()
 	*/
 // schedule policy
 #ifndef MLFQ
@@ -412,13 +414,36 @@ static void sched_mlfq() {
 
 // YOUR CODE HERE
 static void sched_fifo() {
-	//Thread Finished, runningnode is NULL
-	
-	//Thread Yielded, runningnode is YIELD
+	//Thread Finished, runningnode is NULL - schedule new runningnode
+	if(runningnode == NULL){
+		runningnode = dequeue(threadqueue);
 
+		//cannot run a blocked thread
+		while(runningnode->t_tcb->Status == BLOCKED){
+			enqueue(threadqueue, runningnode);
+			runningnode = dequeue(threadqueue);
+		}
+		runningnode->t_tcb->Status = RUNNING;
+		swapcontext(&schedulerContext, &(runningnode->t_tcb->Context));
+	}
+	//Thread Yielded, runningnode is READY
 	//Thread Blocked, runningnode is BLOCKED
-
 	//Thread Interrupted (timer), runningnode is RUNNING
+	else {
+		if (runningnode->t_tcb == RUNNING){ // was interrupted
+			runningnode->t_tcb = READY;
+		}
+		enqueue(threadqueue, runningnode);
+
+		// cannot run a blocked thread
+		runningnode = dequeue(threadqueue);
+		while(runningnode->t_tcb->Status == BLOCKED){
+			enqueue(threadqueue, runningnode);
+			runningnode = dequeue(threadqueue);
+		}
+		runningnode->t_tcb->Status = RUNNING;
+		swapcontext(&schedulerContext, &(runningnode->t_tcb->Context));
+	}
 }
 
 void free_queue_node(queue_node* finishednode){

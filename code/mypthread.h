@@ -41,7 +41,7 @@
 typedef uint mypthread_t;
 
  typedef enum _status{
-   READY,RUNNING,BLOCKED,EXIT
+   READY,RUNNING,BLOCKED
  }status;
 
  typedef enum _scheduler{

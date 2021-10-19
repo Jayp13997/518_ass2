@@ -35,45 +35,19 @@
 #include <sys/time.h>
 #include <ucontext.h>
 #include <malloc.h>
+#include <signal.h>
 
 
 
 typedef uint mypthread_t;
 
- typedef enum _status{
-   READY,RUNNING,BLOCKED
- }status;
+typedef enum _status{
+READY,RUNNING,BLOCKED
+}status;
 
- typedef enum _scheduler{
-   MLFQ_SCHEDULER, FIFO_SCHEDULER, PSJF_SCHEDULER
- }scheduler;
-
-
-typedef struct my_mutex_node{
-	struct my_mutex_node* next;
-	mypthread_mutex_t* mutex;
-} mutex_node;
-
-typedef struct my_queue_node{
-	tcb* t_tcb;
-	struct my_queue_node* next;
-} queue_node;
-
-typedef struct my_queue{
-	struct queue_node* first;
-	struct queue_node* last;
-} queue;
-
-typedef struct my_multi_queue{
-	queue* queue0;
-	queue* queue1;
-	queue* queue2;
-	queue* queue3;
-} multi_queue;
-
-
-void* retval[1000000];
-
+typedef enum _scheduler{
+MLFQ_SCHEDULER, FIFO_SCHEDULER, PSJF_SCHEDULER
+}scheduler;
 
 typedef struct threadControlBlock {
 	/* add important states in a thread control block */
@@ -93,19 +67,47 @@ typedef struct threadControlBlock {
 	// thread priority
 	int Priority;
 	// And more ...
-	unsigned long int TimeRan;
+	int TimeQuantums;
 	void * return_value;
 
 	// YOUR CODE HERE
-} tcb;
+} threadControlBlock;
+
+typedef struct my_mutex_node{
+	struct my_mutex_node* next;
+	struct mypthread_mutex_t* mutex;
+} my_mutex_node;
+
+typedef struct my_queue_node{
+	struct threadControlBlock* t_tcb;
+	struct my_queue_node* next;
+} my_queue_node;
+
+typedef struct my_queue{
+	struct my_queue_node* first;
+	struct my_queue_node* last;
+} my_queue;
+
+typedef struct my_multi_queue{
+	my_queue* queue0;
+	my_queue* queue1;
+	my_queue* queue2;
+	my_queue* queue3;
+} my_multi_queue;
+
+
+void* retval[1000000];
+
+
+
 
 /* mutex struct definition */
 typedef struct mypthread_mutex_t {
 	/* add something here */
 	int mId;
 	int isLocked;
-	queue_node* node_has_lock;
-	queue_node* node_blocked_list;
+	my_queue_node* node_has_lock;
+	my_queue_node* node_blocked_list;
 
 	// YOUR CODE HERE
 } mypthread_mutex_t;

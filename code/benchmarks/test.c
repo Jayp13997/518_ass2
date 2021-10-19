@@ -10,9 +10,25 @@
  * You can modify and use this program as much as possible.
  * This will not be graded.
  */
+
+void thread1(){
+	printf("This is thread1\n");
+}
+
+void thread2(){
+	printf("This is thread2");
+}
+
 int main(int argc, char **argv) {
 
+	mypthread_t t1;
+	mypthread_t t2;
+
+	mypthread_create(&t1, NULL, (void *)&thread1, NULL);
+	mypthread_create(&t2, NULL, (void *)&thread1, NULL);
+
 	/* Implement HERE */
+	
 
 	return 0;
 }

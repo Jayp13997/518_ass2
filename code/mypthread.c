@@ -6,7 +6,10 @@
 
 #include "mypthread.h"
 
-
+/*
+TODO: DEAL WITH MAIN CONTEXT
+TODO: DEAL WITH SCHEDULER CONTEXT
+*/
 
 // INITAILIZE ALL YOUR VARIABLES HERE
 // YOUR CODE HERE
@@ -465,15 +468,12 @@ static void sched_stcf() {
 	
 	if(runningnode == NULL){
 		runningnode = stcf_dequeue(threadqueue);
-
+		if (runningnode->t_tcb->Status == NULL){
+			return;
+		}
 		printf("dequeued node\n");
 		printf("runnning node is: %d\n", runningnode->t_tcb->Id);
-		//cannot run a blocked thread
-		while(runningnode->t_tcb->Status == BLOCKED){
-			printf("status is blocked\n");
-			enqueue(threadqueue, runningnode);
-			runningnode = stcf_dequeue(threadqueue);
-		}
+
 		runningnode->t_tcb->Status = RUNNING;
 		printf("Set status to running\n");
 		print_queue(threadqueue);
@@ -492,9 +492,8 @@ static void sched_stcf() {
 
 		// cannot run a blocked thread
 		runningnode = stcf_dequeue(threadqueue);
-		while(runningnode->t_tcb->Status == BLOCKED){
-			enqueue(threadqueue, runningnode);
-			runningnode = dequeue(threadqueue);
+		if (runningnode->t_tcb->Status == NULL){
+			return;
 		}
 		runningnode->t_tcb->Status = RUNNING;
 		printf("set status to running\n");
@@ -738,7 +737,7 @@ my_queue_node* dequeue(my_queue* queue){
 
 my_queue_node* stcf_dequeue(my_queue* queue){
 	if(isEmpty(queue)){
-		retrun NULL;
+		return NULL;
 	}
 	else if(queue->first == queue->last){
 		my_queue_node * dequeued = queue->first;
@@ -750,23 +749,27 @@ my_queue_node* stcf_dequeue(my_queue* queue){
 		my_queue_node* dequeued = queue->first;
 		my_queue_node* ptr = queue->first;
 		while(ptr != NULL){
-			if(ptr->t_tcb->TimeQuantums < dequeued->t_tcb->TimeQuantums){
+			if((ptr->t_tcb->TimeQuantums < dequeued->t_tcb->TimeQuantums && ptr->t_tcb->Status != BLOCKED) || dequeued->t_tcb->Status == BLOCKED && ptr->t_tcb->Status != BLOCKED){
 				dequeued = ptr;
 			}
 			ptr = ptr->next;
 		}
 
-		my_queue_node* prevnode = get_prev_node(queue, dequeued);
+		if(dequeued->t_tcb->Status != BLOCKED){
+			my_queue_node* prevnode = get_prev_node(queue, dequeued);
 
-		if(dequeued->next == NULL){
-			prevnode->next = NULL;
+			if(dequeued->next == NULL){
+				prevnode->next = NULL;
+			}
+			else{
+				prevnode->next = dequeued->next;
+			}
+			return dequeued;
 		}
 		else{
-			prevnode->next = dequeued->next;
+			return NULL;
 		}
-		return dequeued;
 	}
-	return NULL;
 }
 
 my_queue_node* get_prev_node(my_queue* queue, my_queue_node* node){

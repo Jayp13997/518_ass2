@@ -17,6 +17,8 @@
 #define LOWEST_PRIORITY 3
 #define STACK_SIZE 1048576//A megabyte
 #define TIME_QUANTUM 15//milliseconds
+#define TIME_PERIOD_S 100
+#define MULTIQUEUE_NUM 4
 #ifdef MLFQ
 	#define SCHED MLFQ_SCHEDULER
 #elif FIFO
@@ -86,20 +88,18 @@ typedef struct my_queue_node{
 typedef struct my_queue{
 	struct my_queue_node* first;
 	struct my_queue_node* last;
+	int timeslice;
 } my_queue;
 
 typedef struct my_multi_queue{
-	my_queue* queue0;
-	my_queue* queue1;
-	my_queue* queue2;
-	my_queue* queue3;
+	// my_queue* queue0;
+	// my_queue* queue1;
+	// my_queue* queue2;
+	// my_queue* queue3;
+	my_queue ** queue_arr;
 } my_multi_queue;
 
-
 void* retval[1000000];
-
-
-
 
 /* mutex struct definition */
 typedef struct mypthread_mutex_t {

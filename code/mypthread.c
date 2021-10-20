@@ -141,30 +141,39 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 			threadqueue = (my_queue*) malloc(sizeof(my_queue));
 			threadqueue->first = qnode;
 			threadqueue->last = qnode;
+			threadqueue->timeslice = NULL;
 		}
 		else if(SCHED == PSJF_SCHEDULER){
 			printf("Using PSJF\n");
 			threadqueue = (my_queue*) malloc(sizeof(my_queue));
 			threadqueue->first = qnode;
 			threadqueue->last = qnode;
+			threadqueue->timeslice = NULL;
 			printf("Created queue\n");
 		}
 		else{ //MLFQ
 			printf("Using MLFQ\n");
 			multiqueue = (my_multi_queue*) malloc(sizeof(my_multi_queue));
-			multiqueue->queue0 = (my_queue*) malloc(sizeof(my_queue));
-			multiqueue->queue1 = (my_queue*) malloc(sizeof(my_queue));
-			multiqueue->queue2 = (my_queue*) malloc(sizeof(my_queue));
-			multiqueue->queue3 = (my_queue*) malloc(sizeof(my_queue));
+			// multiqueue->queue0 = (my_queue*) malloc(sizeof(my_queue));
+			// multiqueue->queue1 = (my_queue*) malloc(sizeof(my_queue));
+			// multiqueue->queue2 = (my_queue*) malloc(sizeof(my_queue));
+			// multiqueue->queue3 = (my_queue*) malloc(sizeof(my_queue));
 
-			multiqueue->queue0->first = qnode;
-			multiqueue->queue0->last = qnode;
-			multiqueue->queue1->first = NULL;
-			multiqueue->queue1->last = NULL;
-			multiqueue->queue2->first = NULL;
-			multiqueue->queue2->last = NULL;
-			multiqueue->queue3->first = NULL;
-			multiqueue->queue3->last = NULL;
+			// multiqueue->queue0->first = qnode;
+			// multiqueue->queue0->last = qnode;
+			// multiqueue->queue1->first = NULL;
+			// multiqueue->queue1->last = NULL;
+			// multiqueue->queue2->first = NULL;
+			// multiqueue->queue2->last = NULL;
+			// multiqueue->queue3->first = NULL;
+			// multiqueue->queue3->last = NULL;
+			multiqueue->queue_arr = (my_queue**) malloc(MULTIQUEUE_NUM * sizeof(my_queue*));
+			multiqueue->queue_arr[0]->first = qnode;
+			multiqueue->queue_arr[0]->last = qnode;
+			for(int i = 1; i <= MULTIQUEUE_NUM; i++){
+				multiqueue->queue_arr[i]->first = NULL;
+				multiqueue->queue_arr[i]->last = NULL;
+			}
 		}
 		//start_timer();
 		//mypthread_mutex_init(&queuelock, NULL);
@@ -204,14 +213,23 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 		}
 		else{ //MLFQ
 
-			if(multiqueue->queue0->first == NULL){
-				multiqueue->queue0->first = qnode;
-				multiqueue->queue0->last = qnode;
+			// if(multiqueue->queue0->first == NULL){
+			// 	multiqueue->queue0->first = qnode;
+			// 	multiqueue->queue0->last = qnode;
+			// }
+			// else{
+			// 	my_queue_node* last_node = multiqueue->queue0->last;
+			// 	last_node->next = qnode;
+			// 	multiqueue->queue0->last = qnode;
+			// }
+			if(multiqueue->queue_arr[0]->first == NULL){
+				multiqueue->queue_arr[0]->first = qnode;
+				multiqueue->queue_arr[0]->last = qnode;
 			}
 			else{
-				my_queue_node* last_node = multiqueue->queue0->last;
+				my_queue_node* last_node = multiqueue->queue_arr[0]->last;
 				last_node->next = qnode;
-				multiqueue->queue0->last = qnode;
+				multiqueue->queue_arr[0]->last = qnode;
 			}
 			//call scheduler
 		}
@@ -447,6 +465,56 @@ static void sched_mlfq() {
 	// (feel free to modify arguments and return types)
 
 	// YOUR CODE HERE
+	// Rule 1: If Priority(A) > Priority(B), Run A and not B
+	// Rule 2: If Priority(A) = Priority(B), Run A and B in Round Robin
+	// Rule 3: When a job enters the system, it is placed at the highest priority
+	// Rule 4: Once a job uses up its time allotment at a given level, its priority is reduced
+	// Rule 5: After some time period S, move all jobs in the system to the topmost queue.
+
+	//Thread Finished, runningnode is NULL - schedule new runningnode starting from queues of most importance
+	if(runningnode == NULL){
+		int i = 0;
+		while(isEmpty(multiqueue) && allBlocked(multiqueue) && i <= 3){ // get multiqueue queue that is not empty and not all blocked
+			i++;
+		}
+		if(i > 3){ // no more threads to run
+			//handle
+		}
+		runningnode = dequeue(multiqueue->queue_arr[i]);
+		printf("dequeued node\n");
+		printf("runnning node is: %d\n", runningnode->t_tcb->Id);
+
+		while(runningnode->t_tcb->Status == BLOCKED){
+			printf("status is blocked\n");
+			enqueue(multiqueue->queue_arr[i], runningnode);
+			runningnode = dequeue(multiqueue->queue_arr[i]);
+		}
+		runningnode->t_tcb->Status = RUNNING;
+		printf("Set status to running\n");
+		print_queue(multiqueue->queue_arr[i]);
+		setcontext(&(runningnode->t_tcb->Context));
+		printf("set context failed\n");
+	}
+	//Thread Yielded, runningnode is READY
+	//Thread Blocked, runningnode is BLOCKED
+	//Thread Interrupted (timer), runningnode is RUNNING
+	else {
+		//Thread Interrupted - increment 
+		runningnode->t_tcb->TimeQuantums ++;
+		if(runningnode->t_tcb->Priority < 3 && runningnode->t_tcb->TimeQuantums > multiqueue->queue_arr[runningnode->t_tcb->Priority]->timeslice){ //Exceeded time period, increment priority / decrease importance
+			runningnode->t_tcb->Priority ++;
+			enqueue(multiqueue->queue_arr[runningnode->t_tcb->Priority], runningnode);
+			runningnode = NULL;
+		}
+		else { // has not exceeded time period, round robin
+			enqueue(multiqueue->queue_arr[runningnode->t_tcb->Priority], runningnode);
+			runningnode = dequeue(threadqueue);
+			while(runningnode->t_tcb->Status == BLOCKED){
+				enqueue(threadqueue, runningnode);
+				runningnode = dequeue(threadqueue);
+			}
+		}
+	}
 }
 
 // Feel free to add any other functions you need
@@ -567,6 +635,21 @@ int isEmpty(my_queue* queue){
 	}
 }
 
+int allBlocked(my_queue* queue){
+	if(queue == NULL){
+		printf("Queue is uninitialized\n");
+		return -1;
+	}
+	my_queue_node * ptr = queue->first;
+	while(ptr != NULL){
+		if(ptr->t_tcb->Status != BLOCKED){ // READY
+			return 0;
+		}
+		ptr = ptr->next;
+	}
+	return 1;
+}
+
 // void print_queue(queue* queue_print){
 // 	if(queue_print == NULL){
 // 		printf("Queue is empty\n");
@@ -584,7 +667,7 @@ int isEmpty(my_queue* queue){
 
 void print_queue(my_queue* queue_print){
 	if(queue_print == NULL){
-		printf("Queue is empty\n");
+		printf("Queue is uninitialized\n");
 		return;
 	}
 	printf("before ptr\n");

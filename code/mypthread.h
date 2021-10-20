@@ -14,11 +14,10 @@
 /* To use Linux pthread Library in Benchmark, you have to comment the USE_MYTHREAD macro */
 #define USE_MYTHREAD 1
 
-#define LOWEST_PRIORITY 3
-#define STACK_SIZE 1048576//A megabyte
-#define TIME_QUANTUM 15//milliseconds
-#define TIME_PERIOD_S 100
-#define MULTIQUEUE_NUM 4
+#define LOWEST_PRIORITY 3 // LOWEST_PRIORITY + 1 = TOTAL NUMBER OF QUEUE LEVELS FOR MLFQ
+#define STACK_SIZE 1048576 //A megabyte
+#define TIME_QUANTUM 15 //milliseconds, for STCF
+#define TIME_PERIOD_S 100 //milliseconds, for MLFQ
 #ifdef MLFQ
 	#define SCHED MLFQ_SCHEDULER
 #elif FIFO
@@ -33,7 +32,7 @@
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>//added
+#include <time.h>
 #include <sys/time.h>
 #include <ucontext.h>
 #include <malloc.h>
@@ -69,8 +68,9 @@ typedef struct threadControlBlock {
 	// thread priority
 	int Priority;
 	// And more ...
-	int TimeQuantums;
+	int TimeQuantums; // used for stcf
 	void * return_value;
+	int time_passed; //in microseconds, used for mlfq
 
 	// YOUR CODE HERE
 } threadControlBlock;

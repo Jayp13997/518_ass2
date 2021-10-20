@@ -23,7 +23,7 @@
 #elif FIFO
   #define SCHED FIFO_SCHEDULER
 #else
-  #define SCHED PSJF_SCHEDULER
+  #define SCHED STCF_SCHEDULER
 #endif
 
 /* include lib header files that you need here: */
@@ -47,7 +47,7 @@ READY,RUNNING,BLOCKED
 }status;
 
 typedef enum _scheduler{
-MLFQ_SCHEDULER, FIFO_SCHEDULER, PSJF_SCHEDULER
+MLFQ_SCHEDULER, FIFO_SCHEDULER, STCF_SCHEDULER
 }scheduler;
 
 typedef struct threadControlBlock {

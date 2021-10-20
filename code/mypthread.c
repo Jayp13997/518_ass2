@@ -36,6 +36,8 @@ my_mutex_node* find_mutex(int mutexid);
 my_mutex_node* find_prev_mutex(int mutexid);
 static void sched_fifo();
 void print_queue(my_queue* queue_print);
+my_queue_node* psjf_dequeue(my_queue* queue);
+my_queue_node* get_prev_node(my_queue* queue, my_queue_node* node);
 
 /* Extra function declarations end */
 
@@ -450,6 +452,43 @@ static void schedule() {
 static void sched_stcf() {
 	// Your own implementation of STCF
 	// (feel free to modify arguments and return types)
+	printf("PSJF called\n");
+	
+	if(runningnode == NULL){
+		runningnode = psjf_dequeue(threadqueue);
+
+		printf("dequeued node\n");
+		printf("runnning node is: %d\n", runningnode->t_tcb->Id);
+		//cannot run a blocked thread
+		while(runningnode->t_tcb->Status == BLOCKED){
+			printf("status is blocked\n");
+			enqueue(threadqueue, runningnode);
+			runningnode = psjf_dequeue(threadqueue);
+		}
+		runningnode->t_tcb->Status = RUNNING;
+		printf("Set status to running\n");
+		print_queue(threadqueue);
+		setcontext(&(runningnode->t_tcb->Context));
+		printf("set context failed\n");
+	}
+	//Thread Yielded, runningnode is READY
+	//Thread Blocked, runningnode is BLOCKED
+	//Thread Interrupted (timer), runningnode is RUNNING
+	else {
+		if (runningnode->t_tcb == RUNNING){ // was interrupted
+			runningnode->t_tcb = READY;
+		}
+		enqueue(threadqueue, runningnode);
+
+		// cannot run a blocked thread
+		runningnode = psjf_dequeue(threadqueue);
+		while(runningnode->t_tcb->Status == BLOCKED){
+			enqueue(threadqueue, runningnode);
+			runningnode = dequeue(threadqueue);
+		}
+		runningnode->t_tcb->Status = RUNNING;
+		setcontext(&(runningnode->t_tcb->Context));
+	}
 
 	// YOUR CODE HERE
 	//Thread Finished, runningnode is NULL - schedule new runningnode
@@ -626,6 +665,60 @@ my_queue_node* dequeue(my_queue* queue){
 	}
 }
 
+my_queue_node* psjf_dequeue(my_queue* queue){
+	if(isEmpty(queue)){
+		retrun NULL;
+	}
+	else if(queue->first == queue->last){
+		my_queue_node * dequeued = queue->first;
+		queue->first = NULL;
+		queue->last = NULL;
+		return dequeued;
+	}
+	else { // multiple items
+		my_queue_node* dequeued = queue->first;
+		my_queue_node* ptr = queue->first;
+		while(ptr != NULL){
+			if(ptr->t_tcb->Priority < dequeued->t_tcb->Priority){
+				dequeued = ptr;
+			}
+			ptr = ptr->next;
+		}
+
+		my_queue_node* prevnode = get_prev_node(queue, dequeued);
+
+		if(dequeued->next == NULL){
+			prevnode->next = NULL;
+		}
+		else{
+			prevnode->next = dequeued->next;
+		}
+		return dequeued;
+	}
+	return NULL;
+}
+
+my_queue_node* get_prev_node(my_queue* queue, my_queue_node* node){
+
+	my_queue_node* ptr = queue->first;
+
+	if(isEmpty(queue)){
+		return NULL;
+	}
+
+	if(queue->first == node){
+		return NULL;
+	}
+
+	while(ptr->next != NULL){
+		if(ptr->next == node){
+			return ptr;
+		}
+		ptr = ptr->next;
+	}
+	return NULL;
+}
+
 int isEmpty(my_queue* queue){
 	if(queue->first == NULL && queue->last == NULL){
 		return 1;
@@ -714,7 +807,6 @@ my_mutex_node* find_prev_mutex(int mutexid){
 		else{
 			mptr = mptr->next;
 		}
-	
 	}
 	ignore_int = 0;
 	return NULL;

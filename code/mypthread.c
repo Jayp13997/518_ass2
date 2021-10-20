@@ -36,7 +36,7 @@ my_mutex_node* find_mutex(int mutexid);
 my_mutex_node* find_prev_mutex(int mutexid);
 static void sched_fifo();
 void print_queue(my_queue* queue_print);
-my_queue_node* psjf_dequeue(my_queue* queue);
+my_queue_node* stcf_dequeue(my_queue* queue);
 my_queue_node* get_prev_node(my_queue* queue, my_queue_node* node);
 
 /* Extra function declarations end */
@@ -145,8 +145,8 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 			threadqueue->last = qnode;
 			threadqueue->timeslice = NULL;
 		}
-		else if(SCHED == PSJF_SCHEDULER){
-			printf("Using PSJF\n");
+		else if(SCHED == STCF_SCHEDULER){
+			printf("Using STCF\n");
 			threadqueue = (my_queue*) malloc(sizeof(my_queue));
 			threadqueue->first = qnode;
 			threadqueue->last = qnode;
@@ -198,7 +198,7 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 			}
 			//call scheduler
 		}
-		else if(SCHED == PSJF_SCHEDULER){
+		else if(SCHED == STCF_SCHEDULER){
 			if(threadqueue->first == NULL){
 				threadqueue->first = qnode;
 				threadqueue->last = qnode;
@@ -435,16 +435,16 @@ static void schedule() {
 	if(isEmpty(threadqueue)){
 		setcontext(&mainContext);
 	}
-// schedule policy
-#ifndef MLFQ
-	// Choose STCF
-// #elif FIFO
-// 	sched_fifo();
-// 	// Choose MLFQ
-	sched_fifo();
-#else
-	sched_fifo();
-#endif
+
+	// schedule policy
+	#ifdef MLFQ
+		// Choose STCF
+		sched_mlfq();
+	elif FIFO
+		sched_fifo();
+	#else
+		sched_stcf();
+	#endif
 
 }
 
@@ -452,10 +452,10 @@ static void schedule() {
 static void sched_stcf() {
 	// Your own implementation of STCF
 	// (feel free to modify arguments and return types)
-	printf("PSJF called\n");
+	printf("STCF called\n");
 	
 	if(runningnode == NULL){
-		runningnode = psjf_dequeue(threadqueue);
+		runningnode = stcf_dequeue(threadqueue);
 
 		printf("dequeued node\n");
 		printf("runnning node is: %d\n", runningnode->t_tcb->Id);
@@ -463,7 +463,7 @@ static void sched_stcf() {
 		while(runningnode->t_tcb->Status == BLOCKED){
 			printf("status is blocked\n");
 			enqueue(threadqueue, runningnode);
-			runningnode = psjf_dequeue(threadqueue);
+			runningnode = stcf_dequeue(threadqueue);
 		}
 		runningnode->t_tcb->Status = RUNNING;
 		printf("Set status to running\n");
@@ -478,24 +478,23 @@ static void sched_stcf() {
 		if (runningnode->t_tcb == RUNNING){ // was interrupted
 			runningnode->t_tcb = READY;
 		}
+		runningnode->t_tcb->TimeQuantums++;
 		enqueue(threadqueue, runningnode);
 
 		// cannot run a blocked thread
-		runningnode = psjf_dequeue(threadqueue);
+		runningnode = stcf_dequeue(threadqueue);
 		while(runningnode->t_tcb->Status == BLOCKED){
 			enqueue(threadqueue, runningnode);
 			runningnode = dequeue(threadqueue);
 		}
 		runningnode->t_tcb->Status = RUNNING;
+		printf("set status to running\n");
+		print_queue(threadqueue);
 		setcontext(&(runningnode->t_tcb->Context));
+		printf("set context failed\n");
 	}
 
 	// YOUR CODE HERE
-	//Thread Finished, runningnode is NULL - schedule new runningnode
-
-	//Thread Yielded, runningnode is READY
-	//Thread Blocked, runningnode is BLOCKED
-	//Thread Interrupted (timer), runningnode is RUNNING
 }
 
 /* Preemptive MLFQ scheduling algorithm */
@@ -665,7 +664,7 @@ my_queue_node* dequeue(my_queue* queue){
 	}
 }
 
-my_queue_node* psjf_dequeue(my_queue* queue){
+my_queue_node* stcf_dequeue(my_queue* queue){
 	if(isEmpty(queue)){
 		retrun NULL;
 	}
@@ -679,7 +678,7 @@ my_queue_node* psjf_dequeue(my_queue* queue){
 		my_queue_node* dequeued = queue->first;
 		my_queue_node* ptr = queue->first;
 		while(ptr != NULL){
-			if(ptr->t_tcb->Priority < dequeued->t_tcb->Priority){
+			if(ptr->t_tcb->TimeQuantums < dequeued->t_tcb->TimeQuantums){
 				dequeued = ptr;
 			}
 			ptr = ptr->next;

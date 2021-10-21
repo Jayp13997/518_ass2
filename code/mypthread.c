@@ -30,6 +30,7 @@ struct itimerval timer;
 struct sigaction myAction;
 struct itimerval period_s_timer;
 int allBlocked(my_queue* queue);
+void end_of_period();
 
 
 /* Extra function declarations */
@@ -52,6 +53,7 @@ my_queue_node* mlfq_dequeue(my_multi_queue* amultiqueue);
 void start_timer_mlfq(my_queue* aqueue);
 void start_timer_period_s();
 int isEmpty(my_queue* queue);
+void start_timer();
 
 /* Extra function declarations end */
 
@@ -145,7 +147,7 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 	threadControlBlock* new_tcb = (threadControlBlock*) malloc(sizeof(threadControlBlock));
 	new_tcb->Priority = 0;
 	new_tcb->TimeQuantums = 0;
-	new_tcb->Id = *thread;
+	new_tcb->Id = thread;
 	new_tcb->Status = READY;
 	new_tcb->blocked_by = NULL;
 	new_tcb->next_blocked = NULL;
@@ -175,7 +177,7 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 	qnode->next = NULL;
 
 	//put thread in a queue
-	printf("This is node: %u\n", new_tcb->Id);
+	printf("This is node: %u\n", *new_tcb->Id);
 
 	if(SCHED != MLFQ_SCHEDULER){
 		enqueue(threadqueue, qnode);
@@ -406,11 +408,12 @@ static void sched_stcf() {
 			return;
 		}
 		printf("dequeued node\n");
-		printf("runnning node is: %u\n", runningnode->t_tcb->Id);
+		printf("runnning node is: %u\n", *runningnode->t_tcb->Id);
 
 		runningnode->t_tcb->Status = RUNNING;
 		printf("Set status to running\n");
 		print_queue(threadqueue);
+		start_timer_mlfq(multiqueue->queue_arr[runningnode->t_tcb->Priority]);
 		setcontext(&(runningnode->t_tcb->Context));
 		printf("set context failed\n");
 	}
@@ -421,7 +424,9 @@ static void sched_stcf() {
 		if (runningnode->t_tcb->Status == RUNNING){ // was interrupted
 			runningnode->t_tcb->Status = READY;
 		}
-		runningnode->t_tcb->TimeQuantums++;
+		if(timer.it_value.tv_sec == 0 && timer.it_value.tv_usec == 0){
+			runningnode->t_tcb->TimeQuantums++;
+		}
 		enqueue(threadqueue, runningnode);
 
 		// cannot run a blocked thread
@@ -432,6 +437,7 @@ static void sched_stcf() {
 		runningnode->t_tcb->Status = RUNNING;
 		printf("set status to running\n");
 		print_queue(threadqueue);
+		start_timer();
 		setcontext(&(runningnode->t_tcb->Context));
 		printf("set context failed\n");
 	}
@@ -452,11 +458,7 @@ static void sched_mlfq() {
 	// Rule 5: After some time period S, move all jobs in the system to the topmost queue.
 
 	// Check if period S has no remaining time from signal. If so, move all jobs to topmost queue.
-	if (period_s_timer.it_value.tv_sec == 0 && period_s_timer.it_value.tv_usec == 0){
-		mlfq_move_all_to_top(multiqueue);
-		start_timer_period_s();
-		setcontext(&(runningnode->t_tcb->Context)); // check this
-	}
+	
 
 	//Thread Finished, runningnode is NULL - schedule new runningnode starting from queues of most importance
 	if(runningnode == NULL){
@@ -479,7 +481,9 @@ static void sched_mlfq() {
 	else {
 		//add to total time passed
 		runningnode->t_tcb->time_passed += get_time_spent_micro_sec(timer);
-
+		if (runningnode->t_tcb->Status == RUNNING){ // was interrupted
+			runningnode->t_tcb->Status = READY;
+		}
 		//Exceeded time slice, increment priority / decrease importance and reset time passed
 		if(runningnode->t_tcb->Priority < LOWEST_PRIORITY && runningnode->t_tcb->time_passed > (multiqueue->queue_arr[runningnode->t_tcb->Priority]->timeslice)*1000){
 			runningnode->t_tcb->Priority ++;
@@ -516,7 +520,7 @@ static void sched_fifo() {
 	if(runningnode == NULL){
 		runningnode = dequeue(threadqueue);
 		printf("dequeued node\n");
-		printf("runnning node is: %u\n", runningnode->t_tcb->Id);
+		printf("runnning node is: %u\n", *runningnode->t_tcb->Id);
 		//cannot run a blocked thread
 		while(runningnode->t_tcb->Status == BLOCKED){
 			printf("status is blocked\n");
@@ -533,8 +537,8 @@ static void sched_fifo() {
 	//Thread Blocked, runningnode is BLOCKED
 	//Thread Interrupted (timer), runningnode is RUNNING
 	else {
-		if (runningnode->t_tcb == RUNNING){ // was interrupted
-			runningnode->t_tcb = READY;
+		if (runningnode->t_tcb->Status == RUNNING){ // was interrupted
+			runningnode->t_tcb->Status = READY;
 		}
 		enqueue(threadqueue, runningnode);
 
@@ -553,7 +557,7 @@ void free_queue_node(my_queue_node* finishednode){
 	if(finishednode == NULL){
 		return;
 	}
-	printf("freeing node id:%u Status:%d\n", finishednode->t_tcb->Id, finishednode->t_tcb->Status);
+	printf("freeing node id:%u Status:%d\n", *finishednode->t_tcb->Id, finishednode->t_tcb->Status);
 
 	printf("Freeing stack\n");
 	if(finishednode->t_tcb->Context.uc_stack.ss_sp != NULL){
@@ -572,6 +576,7 @@ void free_queue_node(my_queue_node* finishednode){
 }
 
 void mlfq_move_all_to_top(my_multi_queue* amultiqueue){
+	runningnode->t_tcb->Priority = 0;
 	int i = 1;
 	while(i <= LOWEST_PRIORITY){
 		while(!isEmpty(amultiqueue->queue_arr[i])){
@@ -595,13 +600,14 @@ my_queue_node* mlfq_dequeue(my_multi_queue* amultiqueue){
 	}
 	my_queue_node* ptr = dequeue(amultiqueue->queue_arr[i]);
 	printf("dequeued node\n");
-	printf("runnning node is: %u\n", runningnode->t_tcb->Id);
+	printf("runnning node is: %u\n", *runningnode->t_tcb->Id);
 
 	while(runningnode->t_tcb->Status == BLOCKED){
 		printf("status is blocked\n");
 		enqueue(amultiqueue->queue_arr[i], ptr);
 		ptr = dequeue(amultiqueue->queue_arr[i]);
 	}
+	ptr->next = NULL;
 
 	return ptr;
 }
@@ -609,7 +615,7 @@ my_queue_node* mlfq_dequeue(my_multi_queue* amultiqueue){
 my_queue_node* find_node(my_queue* aqueue, mypthread_t athread){ // look through queue to find the queue node corresponding to a thread
 	my_queue_node* ptr = aqueue->first;
 	while(ptr != NULL){
-		if(ptr->t_tcb->Id == athread){
+		if(*ptr->t_tcb->Id == athread){
 			return ptr; // returns node containing tcb with corresponding thread id
 		}
 		else{
@@ -624,7 +630,7 @@ my_queue_node* find_node_multiqueue(my_multi_queue* amultiqueue, mypthread_t ath
 	for(int i = 0; i <= LOWEST_PRIORITY; i++){
 		ptr = amultiqueue->queue_arr[i]->first;
 		while(ptr != NULL){
-			if(ptr->t_tcb->Id == athread){
+			if(*ptr->t_tcb->Id == athread){
 				return ptr; // returns node containing tcb with corresponding thread id
 			}
 			else{
@@ -657,12 +663,14 @@ my_queue_node* dequeue(my_queue* queue){
 		my_queue_node * dequeued = queue->first;
 		queue->first = NULL;
 		queue->last = NULL;
+		dequeued->next = NULL;
 		return dequeued;
 	}
 	else { // multiple items
 		my_queue_node * dequeued = queue->first;
 		my_queue_node * newfirst = dequeued->next;
 		queue->first = newfirst;
+		dequeued->next = NULL;
 		return dequeued;
 	}
 }
@@ -675,6 +683,7 @@ my_queue_node* stcf_dequeue(my_queue* queue){
 		my_queue_node * dequeued = queue->first;
 		queue->first = NULL;
 		queue->last = NULL;
+		dequeued->next = NULL;
 		return dequeued;
 	}
 	else { // multiple items
@@ -696,6 +705,7 @@ my_queue_node* stcf_dequeue(my_queue* queue){
 			else{
 				prevnode->next = dequeued->next;
 			}
+			dequeued->next = NULL;
 			return dequeued;
 		}
 		else{
@@ -759,7 +769,7 @@ void print_queue(my_queue* queue_print){
 	my_queue_node * ptr = queue_print->first;
 	while(ptr != NULL){
 		printf("ptr\n");
-		printf("ID: %u Status: %d Runtime: %d\n", ptr->t_tcb->Id, ptr->t_tcb->Status, (int)(ptr->t_tcb->TimeQuantums));
+		printf("ID: %u Status: %d Runtime: %d\n", *ptr->t_tcb->Id, ptr->t_tcb->Status, (int)(ptr->t_tcb->TimeQuantums));
 		ptr = ptr->next;
 	}
 	printf("printing is done\n");
@@ -839,6 +849,11 @@ void start_timer_period_s(){
 
 	setitimer(ITIMER_REAL, &period_s_timer, NULL);
 
-	myAction.sa_handler = &timer_ended;
+	myAction.sa_handler = &end_of_period;
 	sigaction(SIGALRM, &myAction, NULL);
+}
+
+void end_of_period(){
+	mlfq_move_all_to_top(multiqueue);
+	start_timer_period_s();
 }

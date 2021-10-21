@@ -14,6 +14,7 @@ TODO: DEAL WITH SCHEDULER CONTEXT
 // INITAILIZE ALL YOUR VARIABLES HERE
 // YOUR CODE HERE
 int ignore_int = 0;
+int init = 0;
 int num_thread = 0;
 int num_mutex = 0;
 int yielded=0;
@@ -28,12 +29,13 @@ mypthread_mutex_t queuelock;
 struct itimerval timer;
 struct sigaction myAction;
 struct itimerval period_s_timer;
+int allBlocked(my_queue* queue);
+
 
 /* Extra function declarations */
 my_queue_node* find_node(my_queue* aqueue, mypthread_t thread);
 void enqueue(my_queue* queue, my_queue_node* queue_node);
 my_queue_node* dequeue(my_queue* queue);
-void processFinishedJob(int tID);
 void free_queue_node(my_queue_node* runningnode);
 static void schedule();
 my_mutex_node* find_mutex(int mutexid);
@@ -42,6 +44,14 @@ static void sched_fifo();
 void print_queue(my_queue* queue_print);
 my_queue_node* stcf_dequeue(my_queue* queue);
 my_queue_node* get_prev_node(my_queue* queue, my_queue_node* node);
+my_queue_node* find_node_multiqueue(my_multi_queue* amultiqueue, mypthread_t athread);
+int get_time_spent_micro_sec(struct itimerval atimer);
+static void sched_stcf();
+void mlfq_move_all_to_top(my_multi_queue* amultiqueue);
+my_queue_node* mlfq_dequeue(my_multi_queue* amultiqueue);
+void start_timer_mlfq(my_queue* aqueue);
+void start_timer_period_s();
+int isEmpty(my_queue* queue);
 
 /* Extra function declarations end */
 
@@ -55,32 +65,83 @@ void threadWrapper(void* arg, void*(*function)(void*), int tID){
 
 /* create a new thread */
 int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*function)(void*), void * arg) {
+	// create Thread Control Block
+	// create and initialize the context of this thread
+	// allocate space of stack for this thread to run
+	// after everything is all set, push this thread int
+	// YOUR CODE HERE
 
 	printf("Mypthread create was called.\n");
 
 	ignore_int = 1;
 	num_thread ++;
-	// create Thread Control Block
 	*thread = num_thread;
 
-	//create schedular context on an uninitialized queue
-	if(threadqueue == NULL){
-		//getcontext(&mainContext);
+	if(!init){ // not initialized, make scheduler ad main context; make queue/multi_queue depending on the scheduler algo;
 		getcontext(&schedulerContext);
 		schedulerContext.uc_link = 0;
 		schedulerContext.uc_stack.ss_sp = malloc(STACK_SIZE);
 		schedulerContext.uc_stack.ss_size = STACK_SIZE;
 
 		if(schedulerContext.uc_stack.ss_sp == 0){
-			printf("Couldn't allocate space for schedular context\n");
+			printf("Couldn't allocate space for scheduler context\n");
 			exit(1);
 		}
 
 		schedulerContext.uc_stack.ss_flags = 0;
 		makecontext(&schedulerContext, (void*)&schedule, 0);
 
-	}
+		getcontext(&mainContext);
+		mainContext.uc_link = 0;
+		mainContext.uc_stack.ss_sp = malloc(STACK_SIZE);
+		mainContext.uc_stack.ss_size = STACK_SIZE;
 
+		if(mainContext.uc_stack.ss_sp == 0){
+			printf("Couldn't allocate space for main context\n");
+			exit(1);
+		}
+
+		mainContext.uc_stack.ss_flags = 0;
+
+		threadControlBlock* main_tcb = (threadControlBlock*) malloc(sizeof(threadControlBlock));
+		main_tcb->Priority = 0;
+		main_tcb->TimeQuantums = 0;
+		main_tcb->Id = 0;
+		main_tcb->Status = READY;
+		main_tcb->blocked_by = NULL;
+		main_tcb->next_blocked = NULL;
+		main_tcb->time_passed = 0;
+		main_tcb->return_value = NULL;
+		main_tcb->Context = mainContext;
+
+		my_queue_node * mainnode = (my_queue_node*) malloc(sizeof(my_queue_node));
+		mainnode->t_tcb = main_tcb;
+	
+		printf("Creates queue for first time\n");
+
+		if(SCHED != MLFQ_SCHEDULER){
+			printf("Using STCF\n");
+			threadqueue = (my_queue*) malloc(sizeof(my_queue));
+			threadqueue->first = mainnode;
+			threadqueue->last = mainnode;
+			threadqueue->timeslice = 0;
+		}
+		else{ //MLFQ
+			printf("Using MLFQ\n");
+			multiqueue = (my_multi_queue*) malloc(sizeof(my_multi_queue));
+			multiqueue->queue_arr = (my_queue**) malloc((LOWEST_PRIORITY+1) * sizeof(my_queue*));
+			multiqueue->queue_arr[0]->first = mainnode;
+			multiqueue->queue_arr[0]->last = mainnode;
+			multiqueue->queue_arr[0]->timeslice = 2;
+			for(int i = 1; i <= LOWEST_PRIORITY; i++){
+				multiqueue->queue_arr[i]->first = NULL;
+				multiqueue->queue_arr[i]->last = NULL;
+				multiqueue->queue_arr[i]->timeslice = multiqueue->queue_arr[i-1]->timeslice+2;
+			}
+		}
+		// mypthread_mutex_init(&queuelock, NULL);
+	}
+	
 	threadControlBlock* new_tcb = (threadControlBlock*) malloc(sizeof(threadControlBlock));
 	new_tcb->Priority = 0;
 	new_tcb->TimeQuantums = 0;
@@ -88,33 +149,11 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 	new_tcb->Status = READY;
 	new_tcb->blocked_by = NULL;
 	new_tcb->next_blocked = NULL;
-
-
-	// create and initialize the context of this thread
-	// allocate space of stack for this thread to run
-	/*
-	getcontext(&(new_tcb->RetContext));
-	new_tcb->RetContext.uc_link = &schedulerContext;
-	new_tcb->RetContext.uc_stack.ss_sp = malloc(STACK_SIZE);
-
-	if(new_tcb->RetContext.uc_stack.ss_size == 0){
-		printf("Couldn't allocate space for return context\n");
-		exit(1);
-	}
-
-	new_tcb->RetContext.uc_stack.ss_size = STACK_SIZE;
-	new_tcb->RetContext.uc_stack.ss_flags = 0;
-
-	makecontext(&new_tcb->RetContext, (void*)&processFinishedJob, 1, new_tcb->Id);
-
-	printf("new thread has been created: %d\n", *thread);
-	*/
-	// after everything is all set, push this thread int
-	// YOUR CODE HERE
+	new_tcb->time_passed = 0;
+	new_tcb->return_value = NULL;
 
 	ucontext_t newThreadContext;
 	getcontext(&newThreadContext);
-
 	newThreadContext.uc_link = &schedulerContext;
 	newThreadContext.uc_stack.ss_sp = malloc(STACK_SIZE);
 
@@ -129,122 +168,26 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 	//makecontext(&newThreadContext, (void*)threadWrapper, 3, arg, function, (int)&new_tcb->Id);
 	makecontext(&newThreadContext, (void*)function, 1, arg);
 	new_tcb->Context = newThreadContext;
-	printf("TCB Context Created\n");
+	printf("TCB Context Created\n");	
 
 	my_queue_node* qnode = (my_queue_node*) malloc(sizeof(my_queue_node));
 	qnode->t_tcb = new_tcb;
 	qnode->next = NULL;
 
-
 	//put thread in a queue
-	printf("This is node: %d\n", new_tcb->Id);
-	print_queue(threadqueue);
-	if(threadqueue == NULL){ //initialize queue/multi queue depending on the scheduler //start timer
-		printf("Creates queue\n");
+	printf("This is node: %u\n", new_tcb->Id);
 
-		if(SCHED == FIFO_SCHEDULER){
-			printf("Using FIFO\n");
-			threadqueue = (my_queue*) malloc(sizeof(my_queue));
-			threadqueue->first = qnode;
-			threadqueue->last = qnode;
-			threadqueue->timeslice = NULL;
-		}
-		else if(SCHED == STCF_SCHEDULER){
-			printf("Using STCF\n");
-			threadqueue = (my_queue*) malloc(sizeof(my_queue));
-			threadqueue->first = qnode;
-			threadqueue->last = qnode;
-			threadqueue->timeslice = NULL;
-			printf("Created queue\n");
-		}
-		else{ //MLFQ
-			printf("Using MLFQ\n");
-			multiqueue = (my_multi_queue*) malloc(sizeof(my_multi_queue));
-			// multiqueue->queue0 = (my_queue*) malloc(sizeof(my_queue));
-			// multiqueue->queue1 = (my_queue*) malloc(sizeof(my_queue));
-			// multiqueue->queue2 = (my_queue*) malloc(sizeof(my_queue));
-			// multiqueue->queue3 = (my_queue*) malloc(sizeof(my_queue));
-
-			// multiqueue->queue0->first = qnode;
-			// multiqueue->queue0->last = qnode;
-			// multiqueue->queue1->first = NULL;
-			// multiqueue->queue1->last = NULL;
-			// multiqueue->queue2->first = NULL;
-			// multiqueue->queue2->last = NULL;
-			// multiqueue->queue3->first = NULL;
-			// multiqueue->queue3->last = NULL;
-			multiqueue->queue_arr = (my_queue**) malloc((LOWEST_PRIORITY+1) * sizeof(my_queue*));
-			multiqueue->queue_arr[0]->first = qnode;
-			multiqueue->queue_arr[0]->last = qnode;
-			multiqueue->queue_arr[0]->timeslice = 2;
-			for(int i = 1; i <= LOWEST_PRIORITY; i++){
-				multiqueue->queue_arr[i]->first = NULL;
-				multiqueue->queue_arr[i]->last = NULL;
-				multiqueue->queue_arr[i]->timeslice = multiqueue->queue_arr[i-1]->timeslice+2;
-			}
-		}
-		//mypthread_mutex_init(&queuelock, NULL);
-		print_queue(threadqueue);
-		// swapcontext(&mainContext, &schedulerContext);
-		// getcontext(&runningnode->t_tcb->Context);
-		getcontext(&mainContext);
+	if(SCHED != MLFQ_SCHEDULER){
+		enqueue(threadqueue, qnode);
 	}
-	else{ //thread is already initialized
-
-		if(SCHED == FIFO_SCHEDULER){
-			if(threadqueue->first == NULL){ //if thread is null
-				threadqueue->first = qnode;
-				threadqueue->last = qnode;
-			}
-			else{
-				my_queue_node* last_qnode = threadqueue->last;
-				last_qnode->next = qnode;
-				threadqueue->last = qnode;
-			}
-			//call scheduler
-		}
-		else if(SCHED == STCF_SCHEDULER){
-			if(threadqueue->first == NULL){
-				threadqueue->first = qnode;
-				threadqueue->last = qnode;
-			}
-			else{
-				printf("adding another node to queue\n");
-				my_queue_node* last_node = threadqueue->last;
-				last_node->next = qnode;
-				threadqueue->last = qnode;
-				printf("The first node is id: %d Status %d \n", threadqueue->first->t_tcb->Id,threadqueue->first->t_tcb->Status);
-				printf("The second node is id: %d Status %d \n", threadqueue->last->t_tcb->Id,threadqueue->last->t_tcb->Status);
-			}
-			
-		}
-		else{ //MLFQ
-
-			// if(multiqueue->queue0->first == NULL){
-			// 	multiqueue->queue0->first = qnode;
-			// 	multiqueue->queue0->last = qnode;
-			// }
-			// else{
-			// 	my_queue_node* last_node = multiqueue->queue0->last;
-			// 	last_node->next = qnode;
-			// 	multiqueue->queue0->last = qnode;
-			// }
-			if(multiqueue->queue_arr[0]->first == NULL){
-				multiqueue->queue_arr[0]->first = qnode;
-				multiqueue->queue_arr[0]->last = qnode;
-			}
-			else{
-				my_queue_node* last_node = multiqueue->queue_arr[0]->last;
-				last_node->next = qnode;
-				multiqueue->queue_arr[0]->last = qnode;
-			}
-			//call scheduler
-		}
-		setcontext(&schedulerContext);
-		getcontext(&runningnode->t_tcb->Context);
+	else { //MLFQ
+		enqueue(multiqueue->queue_arr[0], qnode);
 	}
-	print_queue(threadqueue);
+
+	//print_queue(threadqueue);
+	init = 1;
 	ignore_int = 0;
+	swapcontext(&mainContext, &schedulerContext);
 	return 0;
 };
 
@@ -273,7 +216,7 @@ void mypthread_exit(void *value_ptr) {
 	printf("try freeing node\n");
 	my_queue_node * ptr = runningnode;
 	runningnode = NULL;
-	//free_queue_node(ptr); // deallocate memory - need to eventually figure this out
+	free_queue_node(ptr); // deallocate memory - need to eventually figure this out
 	printf("freed node\n");
 	setcontext(&schedulerContext); // go to scheduler
 };
@@ -437,23 +380,14 @@ static void schedule() {
 	// 		sched_mlfq();
 
 	// YOUR CODE HERE
-	/*
-	Ideas: Schedule() is called whenever a thread finishes, yields, is blocked, or interrupted
-	Need to implement a timer interrupt
-	Scheduler should also book keep the time something ran so it can put into tcb block
-	Use int setitmer() and int sigaction()
-	*/
 	printf("scheduler being called\n");
-	if(isEmpty(threadqueue)){
-		setcontext(&mainContext);
-	}
+	// if(isEmpty(threadqueue)){
+	// 	setcontext(&mainContext);
+	// }
 
 	// schedule policy
 	#ifdef MLFQ
-		// Choose STCF
-		sched_mlfq();
-	elif FIFO
-		sched_fifo();
+		sched_MLFQ();
 	#else
 		sched_stcf();
 	#endif
@@ -468,11 +402,11 @@ static void sched_stcf() {
 	
 	if(runningnode == NULL){
 		runningnode = stcf_dequeue(threadqueue);
-		if (runningnode->t_tcb->Status == NULL){
+		if (runningnode == NULL){
 			return;
 		}
 		printf("dequeued node\n");
-		printf("runnning node is: %d\n", runningnode->t_tcb->Id);
+		printf("runnning node is: %u\n", runningnode->t_tcb->Id);
 
 		runningnode->t_tcb->Status = RUNNING;
 		printf("Set status to running\n");
@@ -484,15 +418,15 @@ static void sched_stcf() {
 	//Thread Blocked, runningnode is BLOCKED
 	//Thread Interrupted (timer), runningnode is RUNNING
 	else {
-		if (runningnode->t_tcb == RUNNING){ // was interrupted
-			runningnode->t_tcb = READY;
+		if (runningnode->t_tcb->Status == RUNNING){ // was interrupted
+			runningnode->t_tcb->Status = READY;
 		}
 		runningnode->t_tcb->TimeQuantums++;
 		enqueue(threadqueue, runningnode);
 
 		// cannot run a blocked thread
 		runningnode = stcf_dequeue(threadqueue);
-		if (runningnode->t_tcb->Status == NULL){
+		if (runningnode == NULL){
 			return;
 		}
 		runningnode->t_tcb->Status = RUNNING;
@@ -515,15 +449,13 @@ static void sched_mlfq() {
 	// Rule 2: If Priority(A) = Priority(B), Run A and B in Round Robin
 	// Rule 3: When a job enters the system, it is placed at the highest priority
 	// Rule 4: Once a job uses up its time allotment at a given level, its priority is reduced
-	// Rule 5: After some time period S, move all jobs in the system to the topmost queue. TODO
-	// Should not be using TimeQuantums
-	// I think this is almost done, double check tmrw
+	// Rule 5: After some time period S, move all jobs in the system to the topmost queue.
 
 	// Check if period S has no remaining time from signal. If so, move all jobs to topmost queue.
 	if (period_s_timer.it_value.tv_sec == 0 && period_s_timer.it_value.tv_usec == 0){
 		mlfq_move_all_to_top(multiqueue);
 		start_timer_period_s();
-		return;
+		setcontext(&(runningnode->t_tcb->Context)); // check this
 	}
 
 	//Thread Finished, runningnode is NULL - schedule new runningnode starting from queues of most importance
@@ -546,7 +478,7 @@ static void sched_mlfq() {
 	//Thread Blocked, runningnode is BLOCKED - SAME problem as yielded
 	else {
 		//add to total time passed
-		runningnode->t_tcb->time_passed += get_time_spent_micro_sec();
+		runningnode->t_tcb->time_passed += get_time_spent_micro_sec(timer);
 
 		//Exceeded time slice, increment priority / decrease importance and reset time passed
 		if(runningnode->t_tcb->Priority < LOWEST_PRIORITY && runningnode->t_tcb->time_passed > (multiqueue->queue_arr[runningnode->t_tcb->Priority]->timeslice)*1000){
@@ -584,7 +516,7 @@ static void sched_fifo() {
 	if(runningnode == NULL){
 		runningnode = dequeue(threadqueue);
 		printf("dequeued node\n");
-		printf("runnning node is: %d\n", runningnode->t_tcb->Id);
+		printf("runnning node is: %u\n", runningnode->t_tcb->Id);
 		//cannot run a blocked thread
 		while(runningnode->t_tcb->Status == BLOCKED){
 			printf("status is blocked\n");
@@ -621,7 +553,7 @@ void free_queue_node(my_queue_node* finishednode){
 	if(finishednode == NULL){
 		return;
 	}
-	printf("freeing node id:%d Status:%d\n", finishednode->t_tcb->Id, finishednode->t_tcb->Status);
+	printf("freeing node id:%u Status:%d\n", finishednode->t_tcb->Id, finishednode->t_tcb->Status);
 
 	printf("Freeing stack\n");
 	if(finishednode->t_tcb->Context.uc_stack.ss_sp != NULL){
@@ -663,7 +595,7 @@ my_queue_node* mlfq_dequeue(my_multi_queue* amultiqueue){
 	}
 	my_queue_node* ptr = dequeue(amultiqueue->queue_arr[i]);
 	printf("dequeued node\n");
-	printf("runnning node is: %d\n", runningnode->t_tcb->Id);
+	printf("runnning node is: %u\n", runningnode->t_tcb->Id);
 
 	while(runningnode->t_tcb->Status == BLOCKED){
 		printf("status is blocked\n");
@@ -818,21 +750,6 @@ int allBlocked(my_queue* queue){
 	return 1;
 }
 
-// void print_queue(queue* queue_print){
-// 	if(queue_print == NULL){
-// 		printf("Queue is empty\n");
-// 		return;
-// 	}
-// 	printf("before ptr\n");
-// 	queue_node * ptr = queue_print->first;
-// 	while(ptr != NULL){
-// 		printf("ptr\n");
-// 		tcb * test = ptr->t_tcb;
-// 		printf("ID: %d Status: %d Runtime: %d\n", test->Id, test->Status, (int)(test->TimeQuantums));
-// 		ptr = ptr->next;
-// 	}
-// }
-
 void print_queue(my_queue* queue_print){
 	if(queue_print == NULL){
 		printf("Queue is uninitialized\n");
@@ -842,16 +759,11 @@ void print_queue(my_queue* queue_print){
 	my_queue_node * ptr = queue_print->first;
 	while(ptr != NULL){
 		printf("ptr\n");
-		// tcb * test = ptr->t_tcb;
-		printf("ID: %d Status: %d Runtime: %d\n", ptr->t_tcb->Id, ptr->t_tcb->Status, (int)(ptr->t_tcb->TimeQuantums));
+		printf("ID: %u Status: %d Runtime: %d\n", ptr->t_tcb->Id, ptr->t_tcb->Status, (int)(ptr->t_tcb->TimeQuantums));
 		ptr = ptr->next;
 	}
 	printf("printing is done\n");
 	return;
-}
-
-void processFinishedJob(int tID){
-
 }
 
 my_mutex_node* find_mutex(int mutexid){
@@ -916,8 +828,8 @@ void start_timer_mlfq(my_queue* aqueue){
 }
 
 // returns time spent by timer in micro seconds
-int get_time_spent_micro_sec(){
-	return (timer.it_interval.tv_sec - timer.it_value.tv_sec)*1000000 + (timer.it_interval.tv_usec - timer.it_value.tv_usec);
+int get_time_spent_micro_sec(struct itimerval atimer){
+	return (atimer.it_interval.tv_sec - atimer.it_value.tv_sec)*1000000 + (atimer.it_interval.tv_usec - atimer.it_value.tv_usec);
 }
 
 void start_timer_period_s(){

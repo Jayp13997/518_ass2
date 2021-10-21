@@ -413,7 +413,7 @@ static void sched_stcf() {
 		runningnode->t_tcb->Status = RUNNING;
 		printf("Set status to running\n");
 		print_queue(threadqueue);
-		start_timer_mlfq(multiqueue->queue_arr[runningnode->t_tcb->Priority]);
+		start_timer();
 		setcontext(&(runningnode->t_tcb->Context));
 		printf("set context failed\n");
 	}

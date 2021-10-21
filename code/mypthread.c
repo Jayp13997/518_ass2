@@ -20,6 +20,7 @@ int num_mutex = 0;
 int yielded=0;
 ucontext_t schedulerContext;
 ucontext_t mainContext;
+ucontext_t exitContext;
 // ucontext_t parentContext;
 my_queue* threadqueue = NULL;
 my_multi_queue* multiqueue = NULL;
@@ -54,16 +55,17 @@ void start_timer_mlfq(my_queue* aqueue);
 void start_timer_period_s();
 int isEmpty(my_queue* queue);
 void start_timer();
+void exitfun();
+void mutex_unblock_next(mypthread_mutex_t *mutex);
 
 /* Extra function declarations end */
 
-/*
-void threadWrapper(void* arg, void*(*function)(void*), int tID){
-	void* threadretval = (*function)(arg);
-	retval[tID] = threadretval;
+
+void exitfun(){
+	runningnode->t_tcb->Status = EXIT;
 	
 }
-*/
+
 
 /* create a new thread */
 int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*function)(void*), void * arg) {
@@ -79,9 +81,10 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 	num_thread ++;
 	*thread = num_thread;
 
-	if(!init){ // not initialized, make scheduler ad main context; make queue/multi_queue depending on the scheduler algo;
+	if(!init){ // not initialized, make scheduler, exit and main context; make queue/multi_queue depending on the scheduler algo;
+		//scheduler context
 		getcontext(&schedulerContext);
-		schedulerContext.uc_link = 0;
+		schedulerContext.uc_link = NULL;
 		schedulerContext.uc_stack.ss_sp = malloc(STACK_SIZE);
 		schedulerContext.uc_stack.ss_size = STACK_SIZE;
 
@@ -93,8 +96,9 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 		schedulerContext.uc_stack.ss_flags = 0;
 		makecontext(&schedulerContext, (void*)&schedule, 0);
 
+		//main context
 		getcontext(&mainContext);
-		mainContext.uc_link = 0;
+		mainContext.uc_link = NULL;
 		mainContext.uc_stack.ss_sp = malloc(STACK_SIZE);
 		mainContext.uc_stack.ss_size = STACK_SIZE;
 
@@ -104,6 +108,23 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 		}
 
 		mainContext.uc_stack.ss_flags = 0;
+
+
+		//exit context
+
+		getcontext(&exitContext);
+		exitContext.uc_link = &schedulerContext;
+		exitContext.uc_stack.ss_sp = malloc(STACK_SIZE);
+		exitContext.uc_stack.ss_size = STACK_SIZE;
+
+		if(exitContext.uc_stack.ss_sp == 0){
+			printf("Couldn't allocate space for exit context\n");
+			exit(1);
+		}
+
+		exitContext.uc_stack.ss_flags = 0;
+		makecontext(&exitContext, (void*)&exitfun, 0);
+
 
 		threadControlBlock* main_tcb = (threadControlBlock*) malloc(sizeof(threadControlBlock));
 		main_tcb->Priority = 0;
@@ -156,7 +177,7 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 
 	ucontext_t newThreadContext;
 	getcontext(&newThreadContext);
-	newThreadContext.uc_link = &schedulerContext;
+	newThreadContext.uc_link = &exitContext;
 	newThreadContext.uc_stack.ss_sp = malloc(STACK_SIZE);
 
 	if(newThreadContext.uc_stack.ss_sp == 0){
@@ -319,6 +340,7 @@ int mypthread_mutex_unlock(mypthread_mutex_t *mutex) {
 	// Release mutex and make it available again.
 	mutextounlock->mutex->isLocked = 0;
 	mutextounlock->mutex->node_has_lock = NULL;
+	mutex_unblock_next(mutex);
 
 	// Put threads in block list to run queue
 	// so that they could compete for mutex later.
@@ -577,6 +599,12 @@ void free_queue_node(my_queue_node* finishednode){
 
 void mlfq_move_all_to_top(my_multi_queue* amultiqueue){
 	runningnode->t_tcb->Priority = 0;
+	runningnode->t_tcb->time_passed = 0;
+	my_queue_node * ptr = amultiqueue->queue_arr[0];
+	while(ptr != NULL){
+		ptr->t_tcb->time_passed = 0;
+		ptr = ptr->next;
+	}
 	int i = 1;
 	while(i <= LOWEST_PRIORITY){
 		while(!isEmpty(amultiqueue->queue_arr[i])){
@@ -808,6 +836,18 @@ my_mutex_node* find_prev_mutex(int mutexid){
 	}
 	ignore_int = 0;
 	return NULL;
+}
+
+void mutex_unblock_next(mypthread_mutex_t *mutex){
+	if(mutex == NULL){
+		return;
+	}
+	if(mutex->node_blocked_list == NULL){
+		return;
+	}
+	my_queue_node* first_blocked = mutex->node_blocked_list;
+	mutex->node_blocked_list = first_blocked->next;
+	first_blocked->t_tcb->Status = READY;
 }
 
 void timer_ended(){

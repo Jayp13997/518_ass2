@@ -53,7 +53,7 @@ MLFQ_SCHEDULER, FIFO_SCHEDULER, STCF_SCHEDULER
 typedef struct threadControlBlock {
 	/* add important states in a thread control block */
 	struct mypthread_mutex_t* blocked_by;
-	struct queue_node* next_blocked;
+	struct my_queue_node* next_blocked;
 	// thread Id
 	mypthread_t* Id;
 

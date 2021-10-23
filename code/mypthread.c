@@ -266,7 +266,7 @@ int mypthread_join(mypthread_t thread, void **value_ptr) {
 		node = find_node(threadqueue, thread);
 	}
 	 // find blocking node
-	printf("node found from join: %d", node->t_tcb->Id);
+	// printf("node found from join: %d", node->t_tcb->Id);
 	runningnode->t_tcb->Status = BLOCKED;
 	while(node != NULL){ // while the thread is not terminated
 		mypthread_yield(); // do not run until it is done
@@ -381,7 +381,7 @@ int mypthread_mutex_destroy(mypthread_mutex_t *mutex) {
 	if(mutextodestroy->mutex->isLocked == 1){
 		mutextodestroy->mutex->isLocked = 0;
 		mutextodestroy->mutex->node_has_lock = NULL;
-		mutextodestroy->mutex->node_blocked_list = NULL;
+		// mutextodestroy->mutex->node_blocked_list = NULL;
 	}
 
 	my_mutex_node* prevmutex = find_prev_mutex(mutex->mId);
@@ -455,10 +455,11 @@ static void sched_stcf() {
 	else {
 		if (runningnode->t_tcb->Status == RUNNING){ // was interrupted
 			runningnode->t_tcb->Status = READY;
-		}
-		if(timer.it_value.tv_sec == 0 && timer.it_value.tv_usec == 0){
 			runningnode->t_tcb->TimeQuantums++;
 		}
+		// if(timer.it_value.tv_sec == 0 && timer.it_value.tv_usec == 0){
+		// 	runningnode->t_tcb->TimeQuantums++;
+		// }
 		printf("enqueue is called in sched_stcf\n");
 		enqueue(threadqueue, runningnode);
 
@@ -761,6 +762,7 @@ my_queue_node* stcf_dequeue(my_queue* queue){
 			}
 			ptr = ptr->next;
 		}
+		printf("Lowest time is id %d, with %d time quantums\n", dequeued->t_tcb->Id, dequeued->t_tcb->TimeQuantums);
 		if(dequeued->t_tcb->Status != BLOCKED){
 			my_queue_node* prevnode = get_prev_node(queue, dequeued);
 
@@ -895,8 +897,8 @@ void timer_ended(){
 }
 
 void start_timer(){
-	timer.it_value.tv_sec = TIME_QUANTUM/1000;
-	timer.it_value.tv_usec = 0;
+	timer.it_value.tv_sec = 0;
+	timer.it_value.tv_usec = TIME_QUANTUM*1000;
 	timer.it_interval = timer.it_value;
 
 	setitimer(ITIMER_REAL, &timer, NULL);

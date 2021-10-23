@@ -55,13 +55,13 @@ typedef struct threadControlBlock {
 	struct mypthread_mutex_t* blocked_by;
 	struct my_queue_node* next_blocked;
 	// thread Id
-	mypthread_t* Id;
+	mypthread_t Id;
 
 	// thread status
 	status Status;
 
 	// thread context
-	ucontext_t Context;
+	ucontext_t * Context;
 	//ucontext_t RetContext;
 
 	// thread stack

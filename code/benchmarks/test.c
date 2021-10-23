@@ -13,6 +13,7 @@
 
 void thread1(){
 	printf("This is thread1\n");
+	mypthread_exit(NULL);
 }
 
 void thread2(){
@@ -22,13 +23,14 @@ void thread2(){
 int main(int argc, char **argv) {
 
 	mypthread_t t1;
-	mypthread_t t2;
+	// mypthread_t t2;
 
 	mypthread_create(&t1, NULL, (void *)&thread1, NULL);
-	mypthread_create(&t2, NULL, (void *)&thread1, NULL);
+	// mypthread_create(&t2, NULL, (void *)&thread1, NULL);
 
+	mypthread_join(t1, NULL);
 	/* Implement HERE */
-	
+	printf("Main Done\n");
 
 	return 0;
 }

@@ -270,6 +270,12 @@ int mypthread_join(mypthread_t thread, void **value_ptr) {
 	runningnode->t_tcb->Status = BLOCKED;
 	while(node != NULL){ // while the thread is not terminated
 		mypthread_yield(); // do not run until it is done
+		if(SCHED == MLFQ_SCHEDULER){
+			node = find_node_multiqueue(multiqueue, thread);
+		}
+		else{
+			node = find_node(threadqueue, thread);
+		}
 	}
 	runningnode->t_tcb->Status = RUNNING;
 	if(value_ptr != NULL){ 

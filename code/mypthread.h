@@ -17,7 +17,7 @@
 #define LOWEST_PRIORITY 3 // LOWEST_PRIORITY + 1 = TOTAL NUMBER OF QUEUE LEVELS FOR MLFQ
 #define STACK_SIZE 32000 // 32 kb
 #define TIME_QUANTUM 15 //milliseconds, for STCF
-#define TIME_PERIOD_S 100 //milliseconds, for MLFQ
+#define TIME_PERIOD_S 45 //milliseconds, for MLFQ
 #ifdef MLFQ
 	#define SCHED MLFQ_SCHEDULER
 #elif FIFO

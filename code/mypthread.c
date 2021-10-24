@@ -7,8 +7,7 @@
 #include "mypthread.h"
 
 /*
-TODO: DEAL WITH MAIN CONTEXT
-TODO: DEAL WITH SCHEDULER CONTEXT
+TODO: Status thing
 */
 
 // INITAILIZE ALL YOUR VARIABLES HERE
@@ -51,21 +50,25 @@ static void sched_stcf();
 static void sched_mlfq();
 void mlfq_move_all_to_top(my_multi_queue* amultiqueue);
 my_queue_node* mlfq_dequeue(my_multi_queue* amultiqueue);
-void start_timer_mlfq(my_queue* aqueue);
+void start_timer_mlfq(int timeslice);
 void start_timer_period_s();
 int isEmpty(my_queue* queue);
 void start_timer();
 void exitfun();
-void mutex_unblock_next(mypthread_mutex_t *mutex);
-
+void mutex_unblock_all(mypthread_mutex_t *mutex);
+void print_multiqueue(my_multi_queue* multiqueue_print);
+void unblock_join_nodes(my_queue_node * node);
 /* Extra function declarations end */
 
 
 void exitfun(){
+	// printf("exit func Time allotted: %ld\n", timer.it_interval.tv_usec);
+	// printf("exit func Time left: %ld\n", timer.it_value.tv_usec);
 	printf("Exit function is getting called\n");
 	if(runningnode == NULL){
 		return;
 	}
+	unblock_join_nodes(runningnode);
 	free_queue_node(runningnode);
 	// runningnode->t_tcb->Status = EXIT;
 }
@@ -143,6 +146,7 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 		main_tcb->time_passed = 0;
 		main_tcb->return_value = NULL;
 		main_tcb->Context = mainContext;
+		main_tcb->next_join_blocked = NULL;
 
 		my_queue_node * mainnode = (my_queue_node*) malloc(sizeof(my_queue_node));
 		mainnode->t_tcb = main_tcb;
@@ -183,6 +187,8 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 	new_tcb->next_blocked = NULL;
 	new_tcb->time_passed = 0;
 	new_tcb->return_value = NULL;
+	new_tcb->next_join_blocked = NULL;
+
 
 	ucontext_t* newThreadContext = (ucontext_t *)malloc(sizeof(ucontext_t));
 	getcontext(newThreadContext);
@@ -244,6 +250,9 @@ void mypthread_exit(void *value_ptr) {
 	// Deallocated any dynamic memory created when starting this thread
 
 	// YOUR CODE HERE
+	// printf("exit func Time allotted: %ld\n", timer.it_interval.tv_usec);
+	// printf("exit func Time left: %ld\n", timer.it_value.tv_usec);
+	unblock_join_nodes(runningnode);
 	if(value_ptr != NULL){
 		value_ptr = &runningnode->t_tcb->return_value; // if value_ptr not NULL, save return value from thread
 	}
@@ -272,6 +281,18 @@ int mypthread_join(mypthread_t thread, void **value_ptr) {
 	 // find blocking node
 	// printf("node found from join: %d", node->t_tcb->Id);
 	runningnode->t_tcb->Status = BLOCKED;
+	my_queue_node * ptr = node;
+	if(node != NULL){
+		if(ptr->t_tcb->next_join_blocked == NULL){
+			ptr->t_tcb->next_join_blocked = runningnode;
+		}
+		else{
+			while(ptr->t_tcb->next_join_blocked != NULL){
+				ptr = ptr->t_tcb->next_join_blocked;
+			}
+			ptr->t_tcb->next_join_blocked = runningnode;
+		}
+	}
 	while(node != NULL){ // while the thread is not terminated
 		mypthread_yield(); // do not run until it is done
 		if(SCHED == MLFQ_SCHEDULER){
@@ -281,8 +302,9 @@ int mypthread_join(mypthread_t thread, void **value_ptr) {
 			node = find_node(threadqueue, thread);
 		}
 	}
+	printf("unblocked running node\n");
 	runningnode->t_tcb->Status = RUNNING;
-	if(value_ptr != NULL){ 
+	if(value_ptr != NULL && node != NULL){ 
 		value_ptr = &node->t_tcb->return_value; // if value_ptr not NULL, save return value from thread
 	}
 	return 0;
@@ -331,11 +353,16 @@ int mypthread_mutex_lock(mypthread_mutex_t *mutex) {
 	}
     // if acquiring mutex fails, push current thread into block list and //
     // context switch to the scheduler thread
+	// TODO: fix this
 	if(mutex->node_blocked_list == NULL){
 		mutex->node_blocked_list = runningnode;
 	}
 	else{
-		mutex->node_blocked_list->t_tcb->next_blocked = runningnode;
+		my_queue_node * ptr = mutex->node_blocked_list;
+		while(ptr->t_tcb->next_blocked != NULL){
+			ptr = ptr->t_tcb->next_blocked;
+		}
+		ptr->t_tcb->next_blocked = runningnode;
 	}
 	runningnode->t_tcb->Status = BLOCKED;
 	setcontext(schedulerContext);
@@ -361,7 +388,7 @@ int mypthread_mutex_unlock(mypthread_mutex_t *mutex) {
 	// Release mutex and make it available again.
 	__sync_lock_test_and_set(&(mutex->isLocked), 0);
 	mutex->node_has_lock = NULL;
-	mutex_unblock_next(mutex);
+	mutex_unblock_all(mutex);
 
 	// Put threads in block list to run queue
 	// so that they could compete for mutex later.
@@ -383,11 +410,14 @@ int mypthread_mutex_destroy(mypthread_mutex_t *mutex) {
 		ignore_int = 0;
 		return -1;
 	}
-
+	if(mutex->node_blocked_list != NULL){
+		return -1;
+	}
 	printf("Destroying mutex\n");
 	// if(mutex->isLocked == 1){
 		mutex->isLocked = 0;
 		mutex->node_has_lock = NULL;
+		
 		mutex->node_blocked_list = NULL;
 	// }
 
@@ -520,16 +550,21 @@ static void sched_mlfq() {
 
 	//Thread Finished, runningnode is NULL - schedule new runningnode starting from queues of most importance
 	// printf("in mlfq schedul\n");
+	print_multiqueue(multiqueue);
 	if(runningnode == NULL){
 		my_queue_node * new_running_node = mlfq_dequeue(multiqueue);
+		printf("returned from mlfq dequeue\n");
 		if(new_running_node == NULL){
+			printf("deadlock\n");
+			// handle no more nodes or deadlock
 			return;
 		}
 		else{
 			runningnode = new_running_node;
 			runningnode->t_tcb->Status = RUNNING;
 			// printf("Set status to running\n");
-			start_timer_mlfq(multiqueue->queue_arr[runningnode->t_tcb->Priority]);
+			// start_timer_mlfq(multiqueue->queue_arr[runningnode->t_tcb->Priority]->timeslice);
+			start_timer();
 			setcontext(runningnode->t_tcb->Context);
 			printf("set context failed\n");
 		}
@@ -540,6 +575,7 @@ static void sched_mlfq() {
 	else {
 		//add to total time passed
 		runningnode->t_tcb->time_passed += get_time_spent_micro_sec(timer);
+		printf("time passed %d\n", runningnode->t_tcb->time_passed);
 		if (runningnode->t_tcb->Status == RUNNING){ // was interrupted
 			runningnode->t_tcb->Status = READY;
 		}
@@ -554,7 +590,9 @@ static void sched_mlfq() {
 
 		// choose with round robin dequeue, taking into account priority and blocked statuses
 		my_queue_node * new_running_node = mlfq_dequeue(multiqueue);
+		printf("returned from mlfq dequeue\n");
 		if(new_running_node == NULL){
+			printf("deadlock\n");
 			// handle no more nodes or deadlock
 			return;
 		}
@@ -562,7 +600,8 @@ static void sched_mlfq() {
 			runningnode = new_running_node;
 			runningnode->t_tcb->Status = RUNNING;
 			// printf("Set status to running\n");
-			start_timer_mlfq(multiqueue->queue_arr[runningnode->t_tcb->Priority]);
+			// start_timer_mlfq(multiqueue->queue_arr[runningnode->t_tcb->Priority]->timeslice);
+			start_timer();
 			setcontext(runningnode->t_tcb->Context);
 			printf("set context failed\n");
 		}
@@ -611,6 +650,24 @@ static void sched_mlfq() {
 // 		setcontext(&(runningnode->t_tcb->Context));
 // 	}
 // }
+
+void unblock_join_nodes(my_queue_node * node){
+	if(node == NULL){
+		return;
+	}
+	my_queue_node * ptr = node->t_tcb->next_join_blocked;
+	my_queue_node * prev = NULL;
+	if(ptr == NULL){
+		return;
+	}
+	while(ptr != NULL){
+		prev = ptr;
+		ptr->t_tcb->Status = READY;
+		ptr = ptr->t_tcb->next_join_blocked;
+		prev->t_tcb->next_join_blocked = NULL;
+	}
+	return;
+}
 
 void free_queue_node(my_queue_node* finishednode){
 	if(finishednode == NULL){
@@ -689,7 +746,7 @@ my_queue_node* mlfq_dequeue(my_multi_queue* amultiqueue){
 	// printf("runnning node is: %u\n", runningnode->t_tcb->Id);
 
 	while(ptr->t_tcb->Status == BLOCKED){
-		// printf("status is blocked\n");
+		printf("status is blocked\n");
 		enqueue(amultiqueue->queue_arr[i], ptr);
 		ptr = dequeue(amultiqueue->queue_arr[i]);
 	}
@@ -714,14 +771,9 @@ my_queue_node* find_node(my_queue* aqueue, mypthread_t athread){ // look through
 my_queue_node* find_node_multiqueue(my_multi_queue* amultiqueue, mypthread_t athread){ // look through queue to find the queue node corresponding to a thread
 	my_queue_node* ptr;
 	for(int i = 0; i <= LOWEST_PRIORITY; i++){
-		ptr = amultiqueue->queue_arr[i]->first;
-		while(ptr != NULL){
-			if(ptr->t_tcb->Id == athread){
-				return ptr; // returns node containing tcb with corresponding thread id
-			}
-			else{
-				ptr = ptr->next;
-			}
+		my_queue_node * ptr = find_node(amultiqueue->queue_arr[i], athread);
+		if(ptr != NULL){
+			return ptr;
 		}
 	}
 	return NULL; // not found
@@ -749,6 +801,7 @@ my_queue_node* dequeue(my_queue* queue){
 	//	last<-...<-...<-first
 	// printf("Dequeued was called\n");
 	if (isEmpty(queue)) { // empty
+		printf("try to dequeue and queue is empty\n");
 		return NULL;
 	}
 	// else if (queue->first == queue->last){ // one item
@@ -777,6 +830,7 @@ my_queue_node* dequeue(my_queue* queue){
 			queue->last = NULL;
 		}
 		dequeued->next = NULL;
+		printf("dequeued id: %d", dequeued->t_tcb->Id);
 		return dequeued;
 	}
 }
@@ -891,12 +945,28 @@ void print_queue(my_queue* queue_print){
 			printf("BIG MISTAKE\n");
 			exit(0);
 		}
-		printf("ID: %d Status: %d Runtime: %d ---->", ptr->t_tcb->Id, ptr->t_tcb->Status, (int)(ptr->t_tcb->TimeQuantums));
+		if(SCHED == MLFQ_SCHEDULER){
+			printf("ID: %d Status: %d Time passed: %d ---->", ptr->t_tcb->Id, ptr->t_tcb->Status, (int)(ptr->t_tcb->time_passed));
+		}
+		else{
+			printf("ID: %d Status: %d Time Quantums: %d ---->", ptr->t_tcb->Id, ptr->t_tcb->Status, (int)(ptr->t_tcb->TimeQuantums));
+		}
 		ptr = ptr->next;
 	}
 	printf("\n");
 	return;
 }
+
+void print_multiqueue(my_multi_queue* multiqueue_print){
+	printf("------------------------------------------------------------\n");
+	for(int i = 0; i<=LOWEST_PRIORITY; i++){
+		print_queue(multiqueue_print->queue_arr[i]);
+	}
+	printf("------------------------------------------------------------\n");
+	printf("\n");
+	return;
+}
+
 
 // my_mutex_node* find_mutex(int mutexid){
 // 	ignore_int = 1;
@@ -932,7 +1002,7 @@ void print_queue(my_queue* queue_print){
 // 	return NULL;
 // }
 
-void mutex_unblock_next(mypthread_mutex_t *mutex){
+void mutex_unblock_all(mypthread_mutex_t *mutex){
 	if(mutex == NULL){
 		return;
 	}
@@ -940,20 +1010,28 @@ void mutex_unblock_next(mypthread_mutex_t *mutex){
 		return;
 	}
 	printf("trying to unblock\n");
-	my_queue_node* first_blocked = mutex->node_blocked_list;
-	mutex->node_blocked_list = mutex->node_blocked_list->t_tcb->next_blocked;
-	first_blocked->t_tcb->Status = READY;
+	my_queue_node* ptr = mutex->node_blocked_list;
+	my_queue_node* prev = NULL;
+	while(ptr != NULL){
+		prev = ptr;
+		ptr->t_tcb->Status = READY; // add if statement
+		ptr = ptr->t_tcb->next_blocked;
+		prev->t_tcb->next_blocked = NULL;
+	}
+	mutex->node_blocked_list = NULL;
 	printf("success unblock\n");
 }
 
 void timer_ended(){
-	// printf("ran out of time for running node: %d\n", runningnode->t_tcb->Id);
+	printf("ran out of time for running node: %d\n", runningnode->t_tcb->Id);
+	// printf("Time allotted: %ld\n", timer.it_interval.tv_usec);
+	// printf("Time left: %ld\n", timer.it_value.tv_usec);
 	swapcontext(runningnode->t_tcb->Context, schedulerContext);
 }
 
 void start_timer(){
 	timer.it_value.tv_sec = 0;
-	timer.it_value.tv_usec = TIME_QUANTUM*1000;
+	timer.it_value.tv_usec = TIME_QUANTUM * 1000;
 	timer.it_interval = timer.it_value;
 
 	setitimer(ITIMER_REAL, &timer, NULL);
@@ -963,9 +1041,10 @@ void start_timer(){
 }
 
 // start timer for mlfq - no difference except for now it uses microseconds
-void start_timer_mlfq(my_queue* aqueue){
+void start_timer_mlfq(int timeslice){
+	printf("time slice: %d\n", timeslice * 1000);
 	timer.it_value.tv_sec = 0;
-	timer.it_value.tv_usec = (aqueue->timeslice)*1000;
+	timer.it_value.tv_usec = (timeslice)*1000;
 	timer.it_interval = timer.it_value;
 
 	setitimer(ITIMER_REAL, &timer, NULL);
@@ -976,12 +1055,13 @@ void start_timer_mlfq(my_queue* aqueue){
 
 // returns time spent by timer in micro seconds
 int get_time_spent_micro_sec(struct itimerval atimer){
-	return (atimer.it_interval.tv_sec - atimer.it_value.tv_sec)*1000000 + (atimer.it_interval.tv_usec - atimer.it_value.tv_usec);
+	//starting time - remaining time
+	return (atimer.it_interval.tv_usec - atimer.it_value.tv_usec)*1000;
 }
 
 void start_timer_period_s(){
 	period_s_timer.it_value.tv_sec = 0;
-	period_s_timer.it_value.tv_usec = TIME_PERIOD_S;
+	period_s_timer.it_value.tv_usec = TIME_PERIOD_S*1000;
 	period_s_timer.it_interval = period_s_timer.it_value;
 
 	setitimer(ITIMER_REAL, &period_s_timer, NULL);
@@ -991,6 +1071,7 @@ void start_timer_period_s(){
 }
 
 void end_of_period(){
+	printf("ran out of time for time period s\n");
 	mlfq_move_all_to_top(multiqueue);
 	start_timer_period_s();
 }

@@ -16,9 +16,7 @@ mypthread.o: mypthread.h
 ifeq ($(SCHED), PSJF)
 	$(CC) -pthread $(CFLAGS) mypthread.c
 else ifeq ($(SCHED), MLFQ)
- 	$(CC) -pthread $(CFLAGS) -DMLFQ mypthread.c
-else ifeq ($(SCHED), FIFO)
- 	$(CC) -pthread $(CFLAGS) -DFIFO mypthread.c
+	$(CC) -pthread $(CFLAGS) -DMLFQ mypthread.c
 else
 	echo "no such scheduling algorithm"
 endif

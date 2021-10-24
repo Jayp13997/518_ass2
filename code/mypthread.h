@@ -15,9 +15,9 @@
 #define USE_MYTHREAD 1
 
 #define LOWEST_PRIORITY 3 // LOWEST_PRIORITY + 1 = TOTAL NUMBER OF QUEUE LEVELS FOR MLFQ
-#define STACK_SIZE 1048576 //A megabyte
+#define STACK_SIZE 32000 // 32 kb
 #define TIME_QUANTUM 15 //milliseconds, for STCF
-#define TIME_PERIOD_S 100 //milliseconds, for MLFQ
+#define TIME_PERIOD_S 45 //milliseconds, for MLFQ
 #ifdef MLFQ
 	#define SCHED MLFQ_SCHEDULER
 #elif FIFO
@@ -54,6 +54,7 @@ typedef struct threadControlBlock {
 	/* add important states in a thread control block */
 	struct mypthread_mutex_t* blocked_by;
 	struct my_queue_node* next_blocked;
+	struct my_queue_node* next_join_blocked;
 	// thread Id
 	mypthread_t Id;
 

@@ -68,7 +68,6 @@ void exitfun(){
 	}
 	free_queue_node(runningnode);
 	// runningnode->t_tcb->Status = EXIT;
-	runningnode = NULL;
 }
 
 
@@ -105,7 +104,7 @@ int mypthread_create(mypthread_t * thread, pthread_attr_t * attr, void *(*functi
 		//main context
 		mainContext = (ucontext_t *)malloc(sizeof(ucontext_t));
 		getcontext(mainContext);
-		mainContext->uc_link = exitContext;
+		mainContext->uc_link = 0;
 		mainContext->uc_stack.ss_sp = malloc(STACK_SIZE);
 		mainContext->uc_stack.ss_size = STACK_SIZE;
 
@@ -243,9 +242,8 @@ void mypthread_exit(void *value_ptr) {
 		value_ptr = &runningnode->t_tcb->return_value; // if value_ptr not NULL, save return value from thread
 	}
 	printf("try freeing node\n");
-	my_queue_node * ptr = runningnode;
+	free_queue_node(runningnode); // deallocate memory - need to eventually figure this out
 	runningnode = NULL;
-	free_queue_node(ptr); // deallocate memory - need to eventually figure this out
 	printf("freed node\n");
 	setcontext(schedulerContext); // go to scheduler
 };
@@ -291,14 +289,16 @@ int mypthread_mutex_init(mypthread_mutex_t *mutex,
 
 	// YOUR CODE HERE
 
-	my_mutex_node* mutexnode = (my_mutex_node*) malloc(sizeof(my_mutex_node));
-	mypthread_mutex_t* newmutex = (mypthread_mutex_t*) malloc(sizeof(mypthread_mutex_t));
-	mutexnode->mutex = newmutex;
-	mutexnode->mutex->isLocked = 0;
-	mutexnode->mutex->mId = ++num_mutex;
-	mutexnode->next = mutexlist;
-	mutexlist = mutexnode;
-	*mutex = *newmutex;
+	// my_mutex_node* mutexnode = (my_mutex_node*) malloc(sizeof(my_mutex_node));
+	mutex = (mypthread_mutex_t*) malloc(sizeof(mypthread_mutex_t));
+	// mutexnode->mutex = newmutex;
+	mutex->isLocked = 0;
+	mutex->mId = ++num_mutex;
+	mutex->node_has_lock = NULL;
+	mutex->node_blocked_list = NULL;
+	// mutexnode->next = mutexlist;
+	// mutexlist = mutexnode;
+	// *mutex = *newmutex;
 
 	return 0;
 };
@@ -307,29 +307,29 @@ int mypthread_mutex_init(mypthread_mutex_t *mutex,
 int mypthread_mutex_lock(mypthread_mutex_t *mutex) {
 
 	ignore_int = 1;
-	my_mutex_node* mutextolock = find_mutex(mutex->mId);
+	// my_mutex_node* mutextolock = find_mutex(mutex->mId);
 
-	if(mutextolock == NULL){
+	if(mutex == NULL){
 		ignore_int = 0;
 		return -1;
 	}
 
     // use the built-in test-and-set atomic function to test the mutex
 
-	if(__sync_lock_test_and_set(&(mutextolock->mutex->isLocked), 1) == 0){
+	if(__sync_lock_test_and_set(&(mutex->isLocked), 1) == 0){
     // if the mutex is acquired successfully, enter the critical section
-		mutextolock->mutex->node_has_lock = runningnode;
-		mutextolock->mutex->node_blocked_list = NULL;
+		mutex->node_has_lock = runningnode;
+		// mutextolock->mutex->node_blocked_list = NULL;
 		ignore_int = 0;
 		return 0;
 	}
     // if acquiring mutex fails, push current thread into block list and //
     // context switch to the scheduler thread
-	if(mutextolock->mutex->node_blocked_list == NULL){
-		mutextolock->mutex->node_blocked_list = runningnode;
+	if(mutex->node_blocked_list == NULL){
+		mutex->node_blocked_list = runningnode;
 	}
 	else{
-		mutextolock->mutex->node_blocked_list->t_tcb->next_blocked = runningnode;
+		mutex->node_blocked_list->t_tcb->next_blocked = runningnode;
 	}
 	runningnode->t_tcb->Status = BLOCKED;
 	setcontext(schedulerContext);
@@ -345,16 +345,16 @@ int mypthread_mutex_lock(mypthread_mutex_t *mutex) {
 int mypthread_mutex_unlock(mypthread_mutex_t *mutex) {
 
 	ignore_int = 1;
-	my_mutex_node* mutextounlock = find_mutex(mutex->mId);
+	// my_mutex_node* mutextounlock = find_mutex(mutex->mId);
 
-	if(mutextounlock == NULL){
+	if(mutex == NULL){
 		ignore_int = 0;
 		return -1;
 	}
 
 	// Release mutex and make it available again.
-	mutextounlock->mutex->isLocked = 0;
-	mutextounlock->mutex->node_has_lock = NULL;
+	mutex->isLocked = 0;
+	mutex->node_has_lock = NULL;
 	mutex_unblock_next(mutex);
 
 	// Put threads in block list to run queue
@@ -371,36 +371,38 @@ int mypthread_mutex_unlock(mypthread_mutex_t *mutex) {
 int mypthread_mutex_destroy(mypthread_mutex_t *mutex) {
 	// Deallocate dynamic memory created in mypthread_mutex_init
 	ignore_int = 1;
-	my_mutex_node* mutextodestroy = find_mutex(mutex->mId);
+	// my_mutex_node* mutextodestroy = find_mutex(mutex->mId);
 
-	if(mutextodestroy == NULL){
+	if(mutex == NULL){
 		ignore_int = 0;
 		return -1;
 	}
 
-	if(mutextodestroy->mutex->isLocked == 1){
-		mutextodestroy->mutex->isLocked = 0;
-		mutextodestroy->mutex->node_has_lock = NULL;
-		// mutextodestroy->mutex->node_blocked_list = NULL;
-	}
+	printf("Destroying mutex\n");
+	// if(mutex->isLocked == 1){
+		mutex->isLocked = 0;
+		mutex->node_has_lock = NULL;
+		mutex->node_blocked_list = NULL;
+	// }
 
-	my_mutex_node* prevmutex = find_prev_mutex(mutex->mId);
-	if(mutextodestroy->next != NULL){
-		if(prevmutex != NULL){
-			prevmutex->next = mutextodestroy->next;
-		}
-	}
-	else{
-		if(prevmutex != NULL){
-			prevmutex->next = NULL;
-		}
-	}
+	// my_mutex_node* prevmutex = find_prev_mutex(mutex->mId);
+	// if(mutextodestroy->next != NULL){
+	// 	if(prevmutex != NULL){
+	// 		prevmutex->next = mutextodestroy->next;
+	// 	}
+	// }
+	// else{
+	// 	if(prevmutex != NULL){
+	// 		prevmutex->next = NULL;
+	// 	}
+	// }
 
-	free(mutextodestroy->next);
-	free_queue_node(mutextodestroy->mutex->node_has_lock);
-	free_queue_node(mutextodestroy->mutex->node_blocked_list);
-	free(mutextodestroy);
+	// free(mutextodestroy->next);
+	// free_queue_node(mutextodestroy->mutex->node_has_lock);
+	// free_queue_node(mutextodestroy->mutex->node_blocked_list);
+	// free(mutextodestroy);
 
+	//free(mutex);
 	return 0;
 };
 
@@ -440,7 +442,9 @@ static void sched_stcf() {
 	print_queue(threadqueue);
 	
 	if(runningnode == NULL){
+		printf("no running node\n");
 		runningnode = stcf_dequeue(threadqueue);
+		printf("no im here\n");
 		if (runningnode == NULL){
 			printf("running node was null");
 			return;
@@ -465,12 +469,23 @@ static void sched_stcf() {
 
 		// cannot run a blocked thread
 		runningnode = stcf_dequeue(threadqueue);
+		printf("I am here\n");
+		if(runningnode == NULL){
+			printf("wtf\n");
+		}
+		else if (runningnode->t_tcb->Context == NULL){
+			printf("also wtf\n");
+		}
+		
+		printf("ID: %d Status: %d Runtime: %d\n", runningnode->t_tcb->Id, runningnode->t_tcb->Status, (int)(runningnode->t_tcb->TimeQuantums));
 		if (runningnode == NULL){
 			return;
 		}
 		runningnode->t_tcb->Status = RUNNING;
 		//print_queue(threadqueue);
 		start_timer();
+		printf("I am super confused\n");
+		print_queue(threadqueue);
 		setcontext(runningnode->t_tcb->Context);
 		printf("set context failed\n");
 	}
@@ -596,15 +611,22 @@ void free_queue_node(my_queue_node* finishednode){
 	// 	free(finishednode->t_tcb->Context->uc_stack.ss_sp); // deallocate all memory for queue node	
 	// }
 	// if(finishednode->t_tcb->Context != NULL){
-		free(finishednode->t_tcb->Context); // deallocate all memory for queue node	
+		
+		free(finishednode->t_tcb->Context); // deallocate all memory for queue node
+		finishednode->t_tcb->Context = NULL;
+		
 	// }
 	printf("Freeing TCB\n");
 	// if(finishednode->t_tcb != NULL){
+		
 		free(finishednode->t_tcb);
+		finishednode->t_tcb = NULL;
 	// }
 	printf("Freeing node\n");
 	// if(finishednode != NULL){
+		
 		free(finishednode);	
+		finishednode = NULL;
 	// }
 
 	// // if(finishednode->t_tcb->Context.uc_stack.ss_sp != NULL){
@@ -700,12 +722,12 @@ void enqueue(my_queue* queue_list, my_queue_node* node){
 		queue_list->last = node;
 	}
 	else {
-		my_queue_node* last = queue_list->last;
-		last->next = node;
+		queue_list->last->next = node;
 		queue_list->last = node;
 	}
 	printf("node was enqueued\n");
 	printf("enqueued id : %d\n", node->t_tcb->Id);
+	print_queue(queue_list);
 	print_queue(threadqueue);
 	return;
 }
@@ -716,24 +738,32 @@ my_queue_node* dequeue(my_queue* queue){
 	if (isEmpty(queue)) { // empty
 		return NULL;
 	}
-	else if (queue->first == queue->last){ // one item
-		my_queue_node * dequeued = queue->first;
-		queue->first = NULL;
-		queue->last = NULL;
-		dequeued->next = NULL;
-		printf("dequeued id: %d", dequeued->t_tcb->Id);
-		print_queue(threadqueue);
+	// else if (queue->first == queue->last){ // one item
+	// 	my_queue_node * dequeued = queue->first;
+	// 	queue->first = NULL;
+	// 	queue->last = NULL;
+	// 	dequeued->next = NULL;
+	// 	printf("dequeued id: %d", dequeued->t_tcb->Id);
+	// 	print_queue(threadqueue);
 
-		return dequeued;
-	}
-	else { // multiple items
-		my_queue_node * dequeued = queue->first;
-		my_queue_node * newfirst = dequeued->next;
-		queue->first = newfirst;
-		dequeued->next = NULL;
-		printf("dequeued id: %d", dequeued->t_tcb->Id);
-		print_queue(threadqueue);
+	// 	return dequeued;
+	// }
+	// else { // multiple items
+	// 	my_queue_node * dequeued = queue->first;
+	// 	queue->first = dequeued->next;
+	// 	dequeued->next = NULL;
+	// 	printf("dequeued id: %d", dequeued->t_tcb->Id);
+	// 	print_queue(threadqueue);
 
+	// 	return dequeued;
+	// }
+	else{
+		my_queue_node * dequeued = queue->first;
+		queue->first = queue->first->next;
+		if(queue->first == NULL){
+			queue->last = NULL;
+		}
+		dequeued->next = NULL;
 		return dequeued;
 	}
 }
@@ -744,7 +774,7 @@ my_queue_node* stcf_dequeue(my_queue* queue){
 	if(isEmpty(queue)){
 		return NULL;
 	}
-	else if(queue->first == queue->last){
+	else if(queue->first == queue->last){ // one item
 		printf("one item\n");
 		my_queue_node * dequeued = queue->first;
 		queue->first = NULL;
@@ -754,23 +784,28 @@ my_queue_node* stcf_dequeue(my_queue* queue){
 		return dequeued;
 	}
 	else { // multiple items
+		printf("multiple items\n");
 		my_queue_node* dequeued = queue->first;
 		my_queue_node* ptr = queue->first;
 		while(ptr != NULL){
-			if((ptr->t_tcb->TimeQuantums < dequeued->t_tcb->TimeQuantums && ptr->t_tcb->Status != BLOCKED) || dequeued->t_tcb->Status == BLOCKED && ptr->t_tcb->Status != BLOCKED){
+			if((ptr->t_tcb->TimeQuantums < dequeued->t_tcb->TimeQuantums && ptr->t_tcb->Status != BLOCKED) || (dequeued->t_tcb->Status == BLOCKED && ptr->t_tcb->Status != BLOCKED)){
 				dequeued = ptr;
 			}
 			ptr = ptr->next;
 		}
-		printf("Lowest time is id %d, with %d time quantums\n", dequeued->t_tcb->Id, dequeued->t_tcb->TimeQuantums);
+		// printf("Lowest time is id %d, with %d time quantums\n", dequeued->t_tcb->Id, dequeued->t_tcb->TimeQuantums);
 		if(dequeued->t_tcb->Status != BLOCKED){
 			my_queue_node* prevnode = get_prev_node(queue, dequeued);
 
-			if(prevnode == NULL){
+			if(prevnode == NULL){ //dequeue first node
 				dequeued = dequeue(queue);
 			}
-			else if(dequeued->next == NULL){
+			else if(dequeued->next == NULL){ //dequeue last node
 				prevnode->next = NULL;
+				queue->last = prevnode;
+				if(queue->last == queue->first){
+					queue->first->next = NULL;
+				}
 			}
 			else{
 				prevnode->next = dequeued->next;
@@ -832,12 +867,17 @@ int allBlocked(my_queue* queue){
 }
 
 void print_queue(my_queue* queue_print){
-	if(queue_print == NULL){
-		printf("Queue is uninitialized\n");
+	if(queue_print->first == NULL && queue_print->last == NULL){
+		printf("Queue is empty\n");
 		return;
 	}
 	my_queue_node * ptr = queue_print->first;
+	
 	while(ptr != NULL){
+		if(ptr->next == ptr){
+			printf("BIG MISTAKE\n");
+			exit(0);
+		}
 		printf("ID: %d Status: %d Runtime: %d ---->", ptr->t_tcb->Id, ptr->t_tcb->Status, (int)(ptr->t_tcb->TimeQuantums));
 		ptr = ptr->next;
 	}
@@ -886,9 +926,11 @@ void mutex_unblock_next(mypthread_mutex_t *mutex){
 	if(mutex->node_blocked_list == NULL){
 		return;
 	}
+	printf("trying to unblock\n");
 	my_queue_node* first_blocked = mutex->node_blocked_list;
-	mutex->node_blocked_list = first_blocked->next;
+	mutex->node_blocked_list = mutex->node_blocked_list->t_tcb->next_blocked;
 	first_blocked->t_tcb->Status = READY;
+	printf("success unblock\n");
 }
 
 void timer_ended(){

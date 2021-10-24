@@ -14,30 +14,32 @@ pthread_mutex_t mutex;
 long long int sum = 0;
 
 void thread1(){
-	for(long long int i = 0; i < 1000000000; i++){
+	for(long long int i = 0; i < 100000; i++){
 		pthread_mutex_lock(&mutex);
 		sum += 1;
 		pthread_mutex_unlock(&mutex);
 	}
-
+	printf("thread1 done\n");
 	mypthread_exit(NULL);
 }
 
 void thread2(){
-	for(long long int i = 0; i < 2000000000; i++){
+	for(long long int i = 0; i < 200000; i++){
 		pthread_mutex_lock(&mutex);
 		sum += 1;
 		pthread_mutex_unlock(&mutex);
 	}
+	printf("thread2 done\n");
 	mypthread_exit(NULL);
 }
 
 void thread3(){
-	for(long long int i = 0; i < 3000000000; i++){
+	for(long long int i = 0; i < 300000; i++){
 		pthread_mutex_lock(&mutex);
 		sum += 1;
 		pthread_mutex_unlock(&mutex);
 	}
+	printf("thread3 done\n");
 	mypthread_exit(NULL);
 }
 
@@ -49,8 +51,7 @@ int main(int argc, char **argv) {
 
 	mypthread_create(&t1, NULL, (void *)&thread1, NULL);
 	mypthread_create(&t2, NULL, (void *)&thread2, NULL);
-	wait(20);
-	for (long long int i = 0; i < 2000000000; i++);
+	for (long long int i = 0; i < 200000; i++);
 	mypthread_create(&t3, NULL, (void *)&thread3, NULL);
 
 	// pthread_mutex_init(&mutex, NULL);

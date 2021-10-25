@@ -1,8 +1,8 @@
 // File:	mypthread_t.h
 
-// List all group member's name:
-// username of iLab:
-// iLab Server:
+// List all group member's name: Michael Yen (mjy37), Jay Patel (jsp202)
+// username of iLab: ilab1
+// iLab Server: ilab1.cs.rutgers.edu
 
 
 
@@ -43,7 +43,7 @@
 typedef uint mypthread_t;
 
 typedef enum _status{
-READY,RUNNING,BLOCKED,EXIT
+READY,RUNNING,BLOCKED
 }status;
 
 typedef enum _scheduler{
@@ -93,10 +93,6 @@ typedef struct my_queue{
 } my_queue;
 
 typedef struct my_multi_queue{
-	// my_queue* queue0;
-	// my_queue* queue1;
-	// my_queue* queue2;
-	// my_queue* queue3;
 	my_queue ** queue_arr;
 } my_multi_queue;
 
@@ -117,32 +113,6 @@ typedef struct mypthread_mutex_t {
 // Feel free to add your own auxiliary data structures (linked list or queue etc...)
 
 // YOUR CODE HERE
-/*
-typedef struct my_mutex_node{
-	struct my_mutex_node* next;
-	mypthread_mutex_t* mutex;
-} mutex_node;
-
-typedef struct my_queue_node{
-	tcb* t_tcb;
-	struct my_queue_node* next;
-} queue_node;
-
-typedef struct my_queue{
-	struct queue_node* first;
-	struct queue_node* last;
-} queue;
-
-typedef struct my_multi_queue{
-	queue* queue0;
-	queue* queue1;
-	queue* queue2;
-	queue* queue3;
-} multi_queue;
-
-
-void* retval[1000000];
-*/
 
 /* Function Declarations: */
 
